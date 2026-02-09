@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Moon, Sun, Leaf, Palette, Sparkles, Star } from "lucide-react";
+import { Moon, Sun, Leaf, Sparkles, Star, Palette, Cherry, Flame, Snowflake } from "lucide-react";
 
 const THEMES = [
   { id: "dark-blue", name: "Deep Dive", icon: Moon, desc: "Dark Blue" },
@@ -8,6 +8,9 @@ const THEMES = [
   { id: "nature", name: "Zen Garden", icon: Leaf, desc: "Nature" },
   { id: "glass", name: "Frost Glass", icon: Sparkles, desc: "Futuristic Glass" },
   { id: "space", name: "Deep Space", icon: Star, desc: "Starfield" },
+  { id: "sakura", name: "Sakura", icon: Cherry, desc: "Cherry Blossom" },
+  { id: "ember", name: "Ember", icon: Flame, desc: "Volcanic Warm" },
+  { id: "arctic", name: "Arctic", icon: Snowflake, desc: "Ice Cold" },
 ];
 
 export default function ThemeSwitcher({ theme, setTheme, mobile = false }) {
@@ -33,7 +36,7 @@ export default function ThemeSwitcher({ theme, setTheme, mobile = false }) {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" data-testid="theme-toggle" className="rounded-full w-9 h-9"><CurrentIcon className="w-4 h-4" /></Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52 glass-heavy border-border/50">
+      <DropdownMenuContent align="end" className="w-52 glass-heavy border-border/50 max-h-[400px] overflow-y-auto">
         {THEMES.map((t) => {
           const Icon = t.icon;
           return (

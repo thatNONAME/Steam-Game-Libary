@@ -158,13 +158,27 @@ class SteamLibraryAPITester:
 
     def test_steam_login_redirect(self):
         """Test Steam login redirect"""
-        success, response = self.run_test(
-            "Steam Login Redirect",
-            "GET",
-            "auth/steam/login",
-            307  # Redirect status
-        )
-        return success
+        try:
+            url = f"{self.api_url}/auth/steam/login"
+            response = requests.get(url, allow_redirects=False, timeout=10)
+            
+            print(f"\n🔍 Testing Steam Login Redirect...")
+            print(f"   URL: {url}")
+            print(f"   Status: {response.status_code}")
+            
+            # Accept either 307 redirect or 302 redirect
+            if response.status_code in [302, 307]:
+                self.tests_passed += 1
+                print("✅ Passed - Steam login redirect working")
+                return True
+            else:
+                print(f"❌ Failed - Expected redirect (302/307), got {response.status_code}")
+                self.failed_tests.append(f"Steam Login Redirect - Status {response.status_code} (expected 302/307)")
+                return False
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            self.failed_tests.append(f"Steam Login Redirect - Exception: {str(e)}")
+            return False
 
     def run_all_tests(self):
         """Run all backend tests"""

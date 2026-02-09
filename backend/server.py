@@ -189,7 +189,6 @@ async def steam_login(request: Request):
     if origin.endswith('/'):
         origin = origin[:-1]
     # Extract base URL from referer
-    from urllib.parse import urlparse
     parsed = urlparse(origin)
     base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else APP_URL
     callback_url = f"{base_url}/api/auth/steam/callback"

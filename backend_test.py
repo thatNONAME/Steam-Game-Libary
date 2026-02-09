@@ -156,6 +156,21 @@ class SteamLibraryAPITester:
         
         return all_success
 
+    def test_user_search(self):
+        """Test user search endpoint (public endpoint)"""
+        def check_user_search(data):
+            return isinstance(data, list)  # Should return an array (empty or with users)
+            
+        success, response = self.run_test(
+            "User Search API",
+            "GET", 
+            "users/search",
+            200,
+            params={"q": "test"},
+            check_response=check_user_search
+        )
+        return success
+
     def test_steam_login_redirect(self):
         """Test Steam login redirect"""
         try:

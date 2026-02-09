@@ -173,6 +173,7 @@ class SteamLibraryAPITester:
 
     def test_steam_login_redirect(self):
         """Test Steam login redirect"""
+        self.tests_run += 1
         try:
             url = f"{self.api_url}/auth/steam/login"
             response = requests.get(url, allow_redirects=False, timeout=10)

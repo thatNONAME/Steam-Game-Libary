@@ -207,6 +207,12 @@ async def steam_login(request: Request):
 @api_router.get("/auth/steam/callback")
 async def steam_callback(request: Request):
     params = dict(request.query_params)
+    # Derive base URL from the return_to param (which contains the origin used during login)
+    return_to = params.get('openid.return_to', '')
+    from urllib.parse import urlparse
+    parsed = urlparse(return_to)
+    base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else APP_URL
+
     validation_params = dict(params)
     validation_params['openid.mode'] = 'check_authentication'
     try:
@@ -217,15 +223,15 @@ async def steam_callback(request: Request):
             )
         if 'is_valid:true' not in resp.text:
             logger.error(f"Steam validation failed: {resp.text}")
-            return RedirectResponse(url=f"{APP_URL}/?auth_error=validation_failed")
+            return RedirectResponse(url=f"{base_url}/?auth_error=validation_failed")
     except Exception as e:
         logger.error(f"Steam callback error: {e}")
-        return RedirectResponse(url=f"{APP_URL}/?auth_error=connection_error")
+        return RedirectResponse(url=f"{base_url}/?auth_error=connection_error")
 
     claimed_id = params.get('openid.claimed_id', '')
     steam_id_match = re.search(r'/openid/id/(\d+)', claimed_id)
     if not steam_id_match:
-        return RedirectResponse(url=f"{APP_URL}/?auth_error=no_steam_id")
+        return RedirectResponse(url=f"{base_url}/?auth_error=no_steam_id")
     steam_id = steam_id_match.group(1)
 
     try:
@@ -272,7 +278,7 @@ async def steam_callback(request: Request):
         'username': username, 'avatar_url': avatar,
         'exp': datetime.now(timezone.utc) + timedelta(days=30)
     }, JWT_SECRET, algorithm='HS256')
-    return RedirectResponse(url=f"{APP_URL}/auth/callback?token={token}")
+    return RedirectResponse(url=f"{base_url}/auth/callback?token={token}")
 
 @api_router.get("/auth/me")
 async def get_me(user=Depends(get_current_user)):

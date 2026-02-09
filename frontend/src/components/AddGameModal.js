@@ -142,6 +142,9 @@ export default function AddGameModal({ token, onGameAdded, isGuest, localGameCou
           <DialogTitle className="text-xl font-bold font-['Outfit']">
             Add a Steam Game
           </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
+            Search, paste a URL, or drag a Steam link to add games
+          </DialogDescription>
         </DialogHeader>
 
         {/* Tabs */}

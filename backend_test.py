@@ -205,6 +205,7 @@ class SteamLibraryAPITester:
         self.test_categories_endpoint()
         self.test_steam_search()
         self.test_steam_app_details()
+        self.test_user_search()
         
         # Test authentication requirements
         self.test_auth_endpoints_without_login()

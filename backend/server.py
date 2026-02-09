@@ -331,13 +331,19 @@ async def get_public_collections(user_id: str):
     if not user_data.get('is_collections_public', True):
         return JSONResponse(status_code=403, content={"error": "Collections are private"})
     collections = await db.collections.find({'user_id': user_id, 'is_public': True}, {'_id': 0}).to_list(100)
+    all_game_ids = []
     for c in collections:
-        game_ids = c.get('game_ids', [])
-        if game_ids:
-            games = await db.user_games.find({'id': {'$in': game_ids}}, {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}).to_list(100)
-            c['games'] = games
-        else:
-            c['games'] = []
+        all_game_ids.extend(c.get('game_ids', []))
+    if all_game_ids:
+        all_games = await db.user_games.find(
+            {'id': {'$in': list(set(all_game_ids))}},
+            {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}
+        ).to_list(500)
+        game_map = {g['id']: g for g in all_games}
+    else:
+        game_map = {}
+    for c in collections:
+        c['games'] = [game_map[gid] for gid in c.get('game_ids', []) if gid in game_map]
     return collections
 
 # ============ USER SEARCH ============

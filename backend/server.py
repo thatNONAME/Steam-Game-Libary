@@ -456,13 +456,19 @@ async def get_collections(user=Depends(get_current_user)):
     if not user:
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     collections = await db.collections.find({'user_id': user['user_id']}, {'_id': 0}).to_list(100)
+    all_game_ids = []
     for c in collections:
-        game_ids = c.get('game_ids', [])
-        if game_ids:
-            games = await db.user_games.find({'id': {'$in': game_ids}}, {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}).to_list(100)
-            c['games'] = games
-        else:
-            c['games'] = []
+        all_game_ids.extend(c.get('game_ids', []))
+    if all_game_ids:
+        all_games = await db.user_games.find(
+            {'id': {'$in': list(set(all_game_ids))}},
+            {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}
+        ).to_list(500)
+        game_map = {g['id']: g for g in all_games}
+    else:
+        game_map = {}
+    for c in collections:
+        c['games'] = [game_map[gid] for gid in c.get('game_ids', []) if gid in game_map]
     return collections
 
 @api_router.post("/collections")

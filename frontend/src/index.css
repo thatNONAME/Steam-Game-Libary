@@ -5,9 +5,7 @@
 @tailwind utilities;
 
 @layer base {
-  /* Deep Dive - Dark Blue (default) */
-  :root,
-  [data-theme="dark-blue"] {
+  :root, [data-theme="dark-blue"] {
     --background: 218 53% 10%;
     --foreground: 215 25% 91%;
     --card: 218 48% 13%;
@@ -33,10 +31,7 @@
     --chart-3: 142 71% 45%;
     --chart-4: 38 92% 50%;
     --chart-5: 0 84% 60%;
-    --theme-type: dark;
   }
-
-  /* Liquid Metal - Chrome Light */
   [data-theme="chrome"] {
     --background: 210 40% 96%;
     --foreground: 222 47% 11%;
@@ -63,10 +58,7 @@
     --chart-3: 142 71% 45%;
     --chart-4: 38 92% 50%;
     --chart-5: 0 84% 60%;
-    --theme-type: light;
   }
-
-  /* Zen Garden - Nature Dark */
   [data-theme="nature"] {
     --background: 140 40% 5%;
     --foreground: 138 76% 97%;
@@ -93,47 +85,78 @@
     --chart-3: 217 91% 60%;
     --chart-4: 38 92% 50%;
     --chart-5: 0 84% 60%;
-    --theme-type: dark;
+  }
+  [data-theme="glass"] {
+    --background: 230 25% 9%;
+    --foreground: 220 20% 92%;
+    --card: 230 20% 14%;
+    --card-foreground: 0 0% 100%;
+    --popover: 230 20% 14%;
+    --popover-foreground: 220 20% 92%;
+    --primary: 200 100% 65%;
+    --primary-foreground: 220 50% 5%;
+    --secondary: 230 18% 18%;
+    --secondary-foreground: 220 20% 92%;
+    --muted: 230 15% 16%;
+    --muted-foreground: 220 12% 55%;
+    --accent: 280 80% 70%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 20% 22%;
+    --input: 220 20% 22%;
+    --ring: 200 100% 65%;
+    --radius: 1rem;
+    --chart-1: 200 100% 65%;
+    --chart-2: 280 80% 70%;
+    --chart-3: 142 71% 45%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 0 84% 60%;
+  }
+  [data-theme="space"] {
+    --background: 240 20% 4%;
+    --foreground: 240 10% 90%;
+    --card: 240 18% 8%;
+    --card-foreground: 0 0% 100%;
+    --popover: 240 18% 8%;
+    --popover-foreground: 240 10% 90%;
+    --primary: 45 95% 60%;
+    --primary-foreground: 240 20% 4%;
+    --secondary: 240 15% 12%;
+    --secondary-foreground: 240 10% 90%;
+    --muted: 240 12% 10%;
+    --muted-foreground: 240 8% 50%;
+    --accent: 270 60% 65%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 15% 14%;
+    --input: 240 15% 14%;
+    --ring: 45 95% 60%;
+    --radius: 0.75rem;
+    --chart-1: 45 95% 60%;
+    --chart-2: 270 60% 65%;
+    --chart-3: 200 100% 65%;
+    --chart-4: 142 71% 45%;
+    --chart-5: 0 84% 60%;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
     font-family: 'Manrope', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  h1, h2, h3, h4, h5, h6 {
-    font-family: 'Outfit', sans-serif;
-  }
-}
-
-@layer base {
-  [data-debug-wrapper="true"] {
-    display: contents !important;
-  }
+  h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; }
+  [data-debug-wrapper="true"] { display: contents !important; }
 }
 
 @layer utilities {
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-
-  .glass {
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-  }
-
-  .glass-heavy {
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .glass { backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .glass-heavy { backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
 }

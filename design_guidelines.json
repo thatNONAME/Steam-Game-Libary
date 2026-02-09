@@ -1,0 +1,151 @@
+{
+  "brand_identity": {
+    "name": "Nebula Library",
+    "voice": "Immersive, Precision-Engineered, Gamer-Centric but Sophisticated",
+    "core_values": [
+      "Visual Immersion First (Cover Art is Hero)",
+      "Fluid Interactivity (No static states)",
+      "Context-Aware Aesthetics (Themes that change the feeling)"
+    ]
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Outfit, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scale": {
+      "h1": "text-5xl md:text-7xl font-bold tracking-tight",
+      "h2": "text-3xl md:text-5xl font-semibold tracking-tight",
+      "h3": "text-2xl md:text-3xl font-medium",
+      "body": "text-base md:text-lg leading-relaxed",
+      "caption": "text-xs md:text-sm uppercase tracking-widest text-muted-foreground"
+    },
+    "installation": "import '@fontsource/outfit'; import '@fontsource/manrope'; // Add to main entry file"
+  },
+  "themes": {
+    "default_mode": "dark-blue",
+    "schemes": {
+      "dark-blue": {
+        "name": "Deep Dive",
+        "type": "dark",
+        "colors": {
+          "background": "#020408",
+          "foreground": "#e2e8f0",
+          "card": "rgba(13, 18, 30, 0.7)",
+          "card_foreground": "#ffffff",
+          "primary": "#3b82f6",
+          "primary_foreground": "#ffffff",
+          "secondary": "#1e293b",
+          "accent": "#6366f1",
+          "border": "rgba(59, 130, 246, 0.2)",
+          "ring": "#3b82f6"
+        },
+        "visual_enhancer": "bg-[url('https://images.unsplash.com/photo-1759159347914-88541fa4bd14?q=85&w=2000&auto=format&fit=crop')] bg-cover bg-fixed bg-center bg-no-repeat bg-blend-soft-light"
+      },
+      "chrome": {
+        "name": "Liquid Metal",
+        "type": "light",
+        "colors": {
+          "background": "#f1f5f9",
+          "foreground": "#0f172a",
+          "card": "rgba(255, 255, 255, 0.8)",
+          "card_foreground": "#020617",
+          "primary": "#0f172a",
+          "primary_foreground": "#ffffff",
+          "secondary": "#e2e8f0",
+          "accent": "#94a3b8",
+          "border": "rgba(148, 163, 184, 0.4)",
+          "ring": "#64748b"
+        },
+        "visual_enhancer": "bg-[url('https://images.unsplash.com/photo-1746469007083-4a5039386c70?q=85&w=2000&auto=format&fit=crop')] bg-cover bg-fixed bg-center bg-no-repeat opacity-90"
+      },
+      "nature": {
+        "name": "Zen Garden",
+        "type": "dark",
+        "colors": {
+          "background": "#051105",
+          "foreground": "#f0fdf4",
+          "card": "rgba(20, 39, 20, 0.7)",
+          "card_foreground": "#ffffff",
+          "primary": "#22c55e",
+          "primary_foreground": "#022c22",
+          "secondary": "#14532d",
+          "accent": "#86efac",
+          "border": "rgba(34, 197, 94, 0.2)",
+          "ring": "#22c55e"
+        },
+        "visual_enhancer": "bg-[url('https://images.unsplash.com/photo-1739298807027-e27f0383952d?q=85&w=2000&auto=format&fit=crop')] bg-cover bg-fixed bg-center bg-no-repeat bg-blend-overlay"
+      }
+    }
+  },
+  "layout_strategy": {
+    "grid_system": "The Bento Grid - Adapted for Portals",
+    "container": "max-w-[1600px] mx-auto px-4 md:px-8 py-8",
+    "game_grid": "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 md:gap-8",
+    "spacing": {
+      "section_gap": "gap-12 md:gap-16",
+      "card_padding": "p-0",
+      "internal_padding": "p-6"
+    }
+  },
+  "components": {
+    "GameCard": {
+      "aspect_ratio": "aspect-[2/3]",
+      "interaction": "group relative overflow-hidden rounded-xl transition-all duration-500 hover:scale-105 hover:shadow-[0_0_40px_-10px_rgba(var(--primary),0.6)] hover:z-10",
+      "image_style": "object-cover w-full h-full transition-transform duration-700 group-hover:scale-110",
+      "overlay": "absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4",
+      "title": "font-bold text-lg md:text-xl text-white translate-y-4 group-hover:translate-y-0 transition-transform duration-300",
+      "tags": "flex flex-wrap gap-2 mt-2 translate-y-4 group-hover:translate-y-0 transition-transform duration-300 delay-75"
+    },
+    "FilterBar": {
+      "wrapper": "flex items-center gap-3 overflow-x-auto pb-4 no-scrollbar mask-linear-fade",
+      "item": "px-4 py-2 rounded-full text-sm font-medium border border-border/50 bg-background/50 backdrop-blur-md hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer whitespace-nowrap active:scale-95"
+    },
+    "AddGameModal": {
+      "style": "bg-background/95 backdrop-blur-xl border border-border shadow-2xl sm:max-w-[600px]",
+      "input": "h-14 text-lg bg-secondary/50 border-transparent focus:border-primary/50 focus:bg-secondary transition-all"
+    }
+  },
+  "assets": {
+    "placeholders": {
+      "fantasy_cover": "https://images.unsplash.com/photo-1730893841244-3a36fbf04443?auto=format&fit=crop&w=600&q=80",
+      "scifi_cover": "https://images.unsplash.com/photo-1678108293774-2e0fff299545?auto=format&fit=crop&w=600&q=80",
+      "action_cover": "https://images.unsplash.com/photo-1698208189346-6b356d242b09?auto=format&fit=crop&w=600&q=80",
+      "generic_cover": "https://images.unsplash.com/photo-1698970992882-7906327f0b64?auto=format&fit=crop&w=600&q=80"
+    },
+    "textures": {
+      "noise": "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E\")"
+    }
+  },
+  "motion": {
+    "libraries": [
+      "framer-motion"
+    ],
+    "principles": {
+      "hover": "Spring-based scale (stiffness: 300, damping: 20)",
+      "list_entrance": "StaggerChildren (0.05s delay)",
+      "page_transition": "Fade in + subtle slide up (y: 20 -> 0)"
+    }
+  },
+  "instructions_to_main_agent": [
+    "INSTALL DEPENDENCIES: `yarn add framer-motion @fontsource/outfit @fontsource/manrope clsx tailwind-merge`",
+    "THEME IMPLEMENTATION: Use CSS variables in `index.css` but scope them under data-theme attributes on the `html` or `body` tag to allow instant switching.",
+    "GLASSMORPHISM: Apply `backdrop-filter: blur(12px)` heavily on the Navbar and Modals.",
+    "GRID LOGIC: Implement the 'Bento Grid' philosophy. Not just equal squares—allow 'Featured' games to span 2 cols or 2 rows if possible, or stick to a highly responsive masonry-like dense grid.",
+    "HOVER STATES: The game cards must feel 'alive'. Use the `group` class in Tailwind to trigger child animations on parent hover.",
+    "NO DEFAULT SCROLLBARS: Hide scrollbars in the category filter list using `no-scrollbar` utility class.",
+    "DATA-TESTID: Ensure every interactive element (Game Card, Filter Button, Add Button, Theme Toggle) has a unique `data-testid`."
+  ],
+  "universal_guidelines": [
+    "Do not use gradients for dark colors.",
+    "Avoid generic centered layouts.",
+    "Use glass-morphism with 12-24px blur.",
+    "Do not apply `transition: all`.",
+    "Do not center align the app container.",
+    "Use modern button styles (pill or sharp).",
+    "Never use AI emojis as icons.",
+    "Use 2-3x more spacing than usual.",
+    "Use `sonner` for toasts."
+  ]
+}

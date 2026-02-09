@@ -1,21 +1,24 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Save, User, Image, Shield, Loader2 } from "lucide-react";
+import { Save, User, Image, Shield, Loader2, Upload, Camera } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 export default function ProfileSettings({ user, token, onUpdate }) {
   const navigate = useNavigate();
+  const avatarRef = useRef(null);
+  const bannerRef = useRef(null);
   const [form, setForm] = useState({
     display_name: "", bio: "", custom_avatar: "", banner_image: "",
     is_library_public: true, is_collections_public: true,
   });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(null);
 
   useEffect(() => {
     if (!user) { navigate("/"); return; }
@@ -28,6 +31,28 @@ export default function ProfileSettings({ user, token, onUpdate }) {
       is_collections_public: user.is_collections_public !== false,
     });
   }, [user, navigate]);
+
+  const handleFileUpload = async (file, field) => {
+    if (!file) return;
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) { toast.error("File too large (max 5MB)"); return; }
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowed.includes(file.type)) { toast.error("Only JPEG, PNG, WebP, GIF allowed"); return; }
+
+    setUploading(field);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await axios.post(`${API}/upload/image`, formData, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+      });
+      const imageUrl = `${BACKEND_URL}${res.data.url}`;
+      setForm((f) => ({ ...f, [field]: imageUrl }));
+      toast.success("Image uploaded!");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Upload failed");
+    } finally { setUploading(null); }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -51,7 +76,7 @@ export default function ProfileSettings({ user, token, onUpdate }) {
           <div>
             <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Display Name</label>
             <Input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })}
-              data-testid="settings-display-name" className="bg-secondary/30 border-border/50" placeholder="Your display name" />
+              data-testid="settings-display-name" className="bg-secondary/30 border-border/50" />
           </div>
           <div>
             <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Bio</label>
@@ -62,21 +87,68 @@ export default function ProfileSettings({ user, token, onUpdate }) {
 
         <div className="rounded-xl border border-border/50 bg-card/50 p-6 space-y-5">
           <h2 className="text-lg font-semibold flex items-center gap-2"><Image className="w-5 h-5 text-primary" />Appearance</h2>
+
+          {/* Avatar */}
           <div>
-            <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Custom Avatar URL</label>
-            <Input value={form.custom_avatar} onChange={(e) => setForm({ ...form, custom_avatar: e.target.value })}
-              data-testid="settings-avatar" className="bg-secondary/30 border-border/50" placeholder="https://example.com/avatar.jpg" />
-            {(form.custom_avatar || user.avatar_url) && (
-              <img src={form.custom_avatar || user.avatar_url} alt="Preview" className="w-16 h-16 rounded-full mt-2 object-cover border border-border" onError={(e) => { e.target.style.display = 'none'; }} />
-            )}
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Profile Picture</label>
+            <div className="flex items-center gap-4">
+              <div className="relative group">
+                <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-border bg-secondary">
+                  {(form.custom_avatar || user.avatar_url) ? (
+                    <img src={form.custom_avatar || user.avatar_url} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center"><User className="w-8 h-8 text-muted-foreground" /></div>
+                  )}
+                </div>
+                <button onClick={() => avatarRef.current?.click()} data-testid="upload-avatar-btn"
+                  className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                  <Camera className="w-5 h-5 text-white" />
+                </button>
+                {uploading === 'custom_avatar' && (
+                  <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 text-white animate-spin" />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 space-y-2">
+                <input ref={avatarRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden"
+                  onChange={(e) => handleFileUpload(e.target.files?.[0], 'custom_avatar')} />
+                <Button variant="outline" size="sm" onClick={() => avatarRef.current?.click()} className="gap-2" data-testid="choose-avatar-btn">
+                  <Upload className="w-3.5 h-3.5" />Choose from device
+                </Button>
+                <Input value={form.custom_avatar} onChange={(e) => setForm({ ...form, custom_avatar: e.target.value })}
+                  data-testid="settings-avatar-url" className="bg-secondary/30 border-border/50 text-xs" placeholder="Or paste image URL..." />
+              </div>
+            </div>
           </div>
+
+          {/* Banner */}
           <div>
-            <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Banner Image URL</label>
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">Banner Image</label>
+            <div className="relative group rounded-xl overflow-hidden border border-border bg-secondary h-28 cursor-pointer" onClick={() => bannerRef.current?.click()}>
+              {form.banner_image ? (
+                <img src={form.banner_image} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground"><Image className="w-6 h-6" /></div>
+              )}
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex items-center gap-2 text-white text-sm"><Upload className="w-4 h-4" />Upload Banner</div>
+              </div>
+              {uploading === 'banner_image' && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+                </div>
+              )}
+            </div>
+            <input ref={bannerRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden"
+              onChange={(e) => handleFileUpload(e.target.files?.[0], 'banner_image')} data-testid="upload-banner-input" />
+            <div className="flex gap-2 mt-2">
+              <Button variant="outline" size="sm" onClick={() => bannerRef.current?.click()} className="gap-2" data-testid="choose-banner-btn">
+                <Upload className="w-3.5 h-3.5" />Choose from device
+              </Button>
+            </div>
             <Input value={form.banner_image} onChange={(e) => setForm({ ...form, banner_image: e.target.value })}
-              data-testid="settings-banner" className="bg-secondary/30 border-border/50" placeholder="https://example.com/banner.jpg" />
-            {form.banner_image && (
-              <img src={form.banner_image} alt="Preview" className="w-full h-24 rounded-lg mt-2 object-cover border border-border" onError={(e) => { e.target.style.display = 'none'; }} />
-            )}
+              data-testid="settings-banner-url" className="bg-secondary/30 border-border/50 text-xs mt-2" placeholder="Or paste banner URL..." />
           </div>
         </div>
 

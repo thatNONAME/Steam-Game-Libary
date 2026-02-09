@@ -184,13 +184,20 @@ async def _add_game_to_library(app_id: int, name: str, user_id: str, is_wishlist
 # ============ AUTH ROUTES ============
 
 @api_router.get("/auth/steam/login")
-async def steam_login():
-    callback_url = f"{APP_URL}/api/auth/steam/callback"
+async def steam_login(request: Request):
+    origin = request.headers.get('referer', APP_URL).rstrip('/')
+    if origin.endswith('/'):
+        origin = origin[:-1]
+    # Extract base URL from referer
+    from urllib.parse import urlparse
+    parsed = urlparse(origin)
+    base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else APP_URL
+    callback_url = f"{base_url}/api/auth/steam/callback"
     params = {
         'openid.ns': 'http://specs.openid.net/auth/2.0',
         'openid.mode': 'checkid_setup',
         'openid.return_to': callback_url,
-        'openid.realm': APP_URL + '/',
+        'openid.realm': base_url + '/',
         'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
         'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
     }

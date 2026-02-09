@@ -351,10 +351,16 @@ async def search_users(q: str = Query(..., min_length=1)):
         ]},
         {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'is_library_public': 1}
     ).limit(20).to_list(20)
-    for u in users:
-        u['avatar_url'] = u.get('custom_avatar') or u.get('avatar_url', '')
-        game_count = await db.user_games.count_documents({'user_id': u['id']})
-        u['game_count'] = game_count
+    if users:
+        user_ids = [u['id'] for u in users]
+        counts = await db.user_games.aggregate([
+            {'$match': {'user_id': {'$in': user_ids}}},
+            {'$group': {'_id': '$user_id', 'count': {'$sum': 1}}}
+        ]).to_list(100)
+        count_map = {c['_id']: c['count'] for c in counts}
+        for u in users:
+            u['avatar_url'] = u.get('custom_avatar') or u.get('avatar_url', '')
+            u['game_count'] = count_map.get(u['id'], 0)
     return users
 
 # ============ GAME ROUTES ============

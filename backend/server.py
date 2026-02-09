@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, Request, Query, Header, Depends
+from fastapi import FastAPI, APIRouter, Request, Query, Header, Depends, UploadFile, File
 from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
@@ -12,6 +13,7 @@ import jwt
 import httpx
 import re
 import asyncio
+import aiofiles
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
@@ -24,6 +26,21 @@ db_name = os.environ['DB_NAME']
 STEAM_API_KEY = os.environ.get('STEAM_API_KEY', '')
 APP_URL = os.environ.get('APP_URL', '')
 JWT_SECRET = os.environ.get('JWT_SECRET', 'default-secret')
+
+# Owner Steam ID - only this account can manage roles
+OWNER_STEAM_ID = "76561199491242446"
+
+VALID_ROLES = ["Creator", "Admin", "Moderator", "Tester"]
+
+# Bad word filter - only truly offensive slurs/profanity
+BAD_WORDS = set([
+    "nigger", "nigga", "faggot", "retard", "kike", "spic", "chink", "wetback",
+    "tranny", "cunt", "twat", "wanker",
+    "n1gger", "n1gga", "f4ggot", "r3tard",
+])
+
+UPLOAD_DIR = ROOT_DIR / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
@@ -85,7 +102,30 @@ class CollectionUpdate(BaseModel):
     is_public: Optional[bool] = None
     game_ids: Optional[List[str]] = None
 
-# ============ Auth Helpers ============
+class RoleAssign(BaseModel):
+    target_user_id: str
+    role: str
+
+class RoleRemove(BaseModel):
+    target_user_id: str
+    role: str
+
+class CommentCreate(BaseModel):
+    content: str
+    target_type: str  # "profile" or "collection"
+    target_id: str
+
+class CommentModerate(BaseModel):
+    action: str  # "delete" or "approve"
+
+# ============ Helpers ============
+
+def contains_bad_words(text: str) -> bool:
+    words = re.findall(r'[a-zA-Z0-9]+', text.lower())
+    for w in words:
+        if w in BAD_WORDS:
+            return True
+    return False
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -96,6 +136,22 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
         return payload
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
+
+async def is_owner(user) -> bool:
+    if not user:
+        return False
+    return user.get('steam_id') == OWNER_STEAM_ID
+
+async def is_moderator_or_above(user) -> bool:
+    if not user:
+        return False
+    if user.get('steam_id') == OWNER_STEAM_ID:
+        return True
+    user_data = await db.users.find_one({'steam_id': user['steam_id']}, {'_id': 0, 'roles': 1})
+    if not user_data:
+        return False
+    roles = user_data.get('roles', [])
+    return any(r in roles for r in ['Creator', 'Admin', 'Moderator'])
 
 def map_steam_categories(game_data):
     if not game_data:
@@ -130,8 +186,7 @@ async def fetch_steam_app_details(app_id: int):
         try:
             resp = await http_client.get(
                 'https://store.steampowered.com/api/appdetails',
-                params={'appids': app_id},
-                timeout=10.0
+                params={'appids': app_id}, timeout=10.0
             )
             if resp.status_code != 200:
                 return None
@@ -145,9 +200,7 @@ async def fetch_steam_app_details(app_id: int):
 
 def extract_app_id_from_url(url: str) -> Optional[int]:
     match = re.search(r'/app/(\d+)', url)
-    if match:
-        return int(match.group(1))
-    return None
+    return int(match.group(1)) if match else None
 
 async def _add_game_to_library(app_id: int, name: str, user_id: str, is_wishlist: bool = False):
     existing = await db.user_games.find_one({'user_id': user_id, 'app_id': app_id}, {'_id': 0})
@@ -156,9 +209,7 @@ async def _add_game_to_library(app_id: int, name: str, user_id: str, is_wishlist
     game_data = await fetch_steam_app_details(app_id)
     price_data = game_data.get('price_overview', {}) if game_data else {}
     doc = {
-        'id': str(uuid.uuid4()),
-        'user_id': user_id,
-        'app_id': app_id,
+        'id': str(uuid.uuid4()), 'user_id': user_id, 'app_id': app_id,
         'name': game_data.get('name', name) if game_data else name,
         'header_image': game_data.get('header_image', '') if game_data else f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
         'capsule_image': f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/library_600x900.jpg",
@@ -188,7 +239,6 @@ async def steam_login(request: Request):
     origin = request.headers.get('referer', APP_URL).rstrip('/')
     if origin.endswith('/'):
         origin = origin[:-1]
-    # Extract base URL from referer
     parsed = urlparse(origin)
     base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else APP_URL
     callback_url = f"{base_url}/api/auth/steam/callback"
@@ -200,13 +250,11 @@ async def steam_login(request: Request):
         'openid.identity': 'http://specs.openid.net/auth/2.0/identifier_select',
         'openid.claimed_id': 'http://specs.openid.net/auth/2.0/identifier_select',
     }
-    steam_url = f"https://steamcommunity.com/openid/login?{urlencode(params)}"
-    return RedirectResponse(url=steam_url)
+    return RedirectResponse(url=f"https://steamcommunity.com/openid/login?{urlencode(params)}")
 
 @api_router.get("/auth/steam/callback")
 async def steam_callback(request: Request):
     params = dict(request.query_params)
-    # Derive base URL from the return_to param (which contains the origin used during login)
     return_to = params.get('openid.return_to', '')
     parsed = urlparse(return_to)
     base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else APP_URL
@@ -215,15 +263,10 @@ async def steam_callback(request: Request):
     validation_params['openid.mode'] = 'check_authentication'
     try:
         async with httpx.AsyncClient() as http_client:
-            resp = await http_client.post(
-                'https://steamcommunity.com/openid/login',
-                data=validation_params, timeout=15.0
-            )
+            resp = await http_client.post('https://steamcommunity.com/openid/login', data=validation_params, timeout=15.0)
         if 'is_valid:true' not in resp.text:
-            logger.error(f"Steam validation failed: {resp.text}")
             return RedirectResponse(url=f"{base_url}/?auth_error=validation_failed")
-    except Exception as e:
-        logger.error(f"Steam callback error: {e}")
+    except Exception:
         return RedirectResponse(url=f"{base_url}/?auth_error=connection_error")
 
     claimed_id = params.get('openid.claimed_id', '')
@@ -236,8 +279,7 @@ async def steam_callback(request: Request):
         async with httpx.AsyncClient() as http_client:
             player_resp = await http_client.get(
                 'https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/',
-                params={'key': STEAM_API_KEY, 'steamids': steam_id}, timeout=10.0
-            )
+                params={'key': STEAM_API_KEY, 'steamids': steam_id}, timeout=10.0)
         players = player_resp.json().get('response', {}).get('players', [])
     except Exception:
         players = []
@@ -247,9 +289,7 @@ async def steam_callback(request: Request):
     avatar = player.get('avatarfull', '')
 
     user_data = {
-        'steam_id': steam_id,
-        'username': username,
-        'avatar_url': avatar,
+        'steam_id': steam_id, 'username': username, 'avatar_url': avatar,
         'avatar_medium': player.get('avatarmedium', ''),
         'profile_url': player.get('profileurl', ''),
         'updated_at': datetime.now(timezone.utc).isoformat()
@@ -261,15 +301,19 @@ async def steam_callback(request: Request):
         user_id = existing_user['id']
     else:
         user_id = str(uuid.uuid4())
-        user_data['id'] = user_id
-        user_data['display_name'] = username
-        user_data['bio'] = ''
-        user_data['custom_avatar'] = ''
-        user_data['banner_image'] = ''
-        user_data['is_library_public'] = True
-        user_data['is_collections_public'] = True
-        user_data['created_at'] = datetime.now(timezone.utc).isoformat()
+        user_data.update({
+            'id': user_id, 'display_name': username, 'bio': '',
+            'custom_avatar': '', 'banner_image': '',
+            'is_library_public': True, 'is_collections_public': True,
+            'roles': ['Creator'] if steam_id == OWNER_STEAM_ID else [],
+            'followers': [], 'following': [],
+            'created_at': datetime.now(timezone.utc).isoformat()
+        })
         await db.users.insert_one(user_data)
+
+    # Ensure owner always has Creator role
+    if steam_id == OWNER_STEAM_ID:
+        await db.users.update_one({'steam_id': steam_id}, {'$addToSet': {'roles': 'Creator'}})
 
     token = jwt.encode({
         'user_id': user_id, 'steam_id': steam_id,
@@ -285,11 +329,151 @@ async def get_me(user=Depends(get_current_user)):
     user_data = await db.users.find_one({'steam_id': user['steam_id']}, {'_id': 0})
     if not user_data:
         return JSONResponse(status_code=404, content={"error": "User not found"})
+    user_data['is_owner'] = user.get('steam_id') == OWNER_STEAM_ID
     return user_data
 
 @api_router.post("/auth/logout")
 async def logout():
     return {"message": "Logged out"}
+
+# ============ FILE UPLOAD ============
+
+@api_router.post("/upload/image")
+async def upload_image(file: UploadFile = File(...), user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    allowed = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+    if file.content_type not in allowed:
+        return JSONResponse(status_code=400, content={"error": "Only JPEG, PNG, WebP, GIF allowed"})
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "File too large (max 5MB)"})
+    ext = file.filename.rsplit('.', 1)[-1] if '.' in file.filename else 'jpg'
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    filepath = UPLOAD_DIR / filename
+    async with aiofiles.open(filepath, 'wb') as f:
+        await f.write(contents)
+    url = f"/api/uploads/{filename}"
+    return {"url": url, "filename": filename}
+
+# ============ ROLE MANAGEMENT (Owner Only) ============
+
+@api_router.post("/roles/assign")
+async def assign_role(body: RoleAssign, user=Depends(get_current_user)):
+    if not await is_owner(user):
+        return JSONResponse(status_code=403, content={"error": "Only the site owner can manage roles"})
+    if body.role not in VALID_ROLES:
+        return JSONResponse(status_code=400, content={"error": f"Invalid role. Valid: {VALID_ROLES}"})
+    result = await db.users.update_one({'id': body.target_user_id}, {'$addToSet': {'roles': body.role}})
+    if result.matched_count == 0:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    updated = await db.users.find_one({'id': body.target_user_id}, {'_id': 0, 'id': 1, 'username': 1, 'roles': 1})
+    return updated
+
+@api_router.post("/roles/remove")
+async def remove_role(body: RoleRemove, user=Depends(get_current_user)):
+    if not await is_owner(user):
+        return JSONResponse(status_code=403, content={"error": "Only the site owner can manage roles"})
+    if body.role not in VALID_ROLES:
+        return JSONResponse(status_code=400, content={"error": f"Invalid role. Valid: {VALID_ROLES}"})
+    await db.users.update_one({'id': body.target_user_id}, {'$pull': {'roles': body.role}})
+    updated = await db.users.find_one({'id': body.target_user_id}, {'_id': 0, 'id': 1, 'username': 1, 'roles': 1})
+    return updated
+
+@api_router.get("/roles/users")
+async def list_users_with_roles(user=Depends(get_current_user)):
+    if not await is_owner(user):
+        return JSONResponse(status_code=403, content={"error": "Only the owner can view this"})
+    users = await db.users.find(
+        {}, {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'roles': 1, 'steam_id': 1}
+    ).to_list(500)
+    return users
+
+# ============ FOLLOW SYSTEM ============
+
+@api_router.post("/follow/{target_user_id}")
+async def follow_user(target_user_id: str, user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    if target_user_id == user['user_id']:
+        return JSONResponse(status_code=400, content={"error": "Cannot follow yourself"})
+    target = await db.users.find_one({'id': target_user_id}, {'_id': 0, 'id': 1})
+    if not target:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    await db.users.update_one({'id': user['user_id']}, {'$addToSet': {'following': target_user_id}})
+    await db.users.update_one({'id': target_user_id}, {'$addToSet': {'followers': user['user_id']}})
+    return {"message": "Followed", "following": True}
+
+@api_router.delete("/follow/{target_user_id}")
+async def unfollow_user(target_user_id: str, user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    await db.users.update_one({'id': user['user_id']}, {'$pull': {'following': target_user_id}})
+    await db.users.update_one({'id': target_user_id}, {'$pull': {'followers': user['user_id']}})
+    return {"message": "Unfollowed", "following": False}
+
+# ============ COMMENTS ============
+
+@api_router.post("/comments")
+async def create_comment(body: CommentCreate, user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    if not body.content.strip():
+        return JSONResponse(status_code=400, content={"error": "Comment cannot be empty"})
+    if len(body.content) > 500:
+        return JSONResponse(status_code=400, content={"error": "Comment too long (max 500 chars)"})
+    if contains_bad_words(body.content):
+        return JSONResponse(status_code=400, content={"error": "Comment contains inappropriate language"})
+    if body.target_type not in ("profile", "collection"):
+        return JSONResponse(status_code=400, content={"error": "Invalid target type"})
+    doc = {
+        'id': str(uuid.uuid4()),
+        'user_id': user['user_id'],
+        'username': user['username'],
+        'avatar_url': user.get('avatar_url', ''),
+        'content': body.content.strip(),
+        'target_type': body.target_type,
+        'target_id': body.target_id,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'is_hidden': False,
+    }
+    await db.comments.insert_one(doc)
+    doc.pop('_id', None)
+    # Refetch author info for display
+    author = await db.users.find_one({'id': user['user_id']}, {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'roles': 1})
+    if author:
+        doc['author'] = author
+    return doc
+
+@api_router.get("/comments")
+async def get_comments(target_type: str = Query(...), target_id: str = Query(...)):
+    comments = await db.comments.find(
+        {'target_type': target_type, 'target_id': target_id, 'is_hidden': False},
+        {'_id': 0}
+    ).sort('created_at', -1).limit(100).to_list(100)
+    if comments:
+        author_ids = list(set(c['user_id'] for c in comments))
+        authors = await db.users.find(
+            {'id': {'$in': author_ids}},
+            {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'roles': 1}
+        ).to_list(100)
+        author_map = {a['id']: a for a in authors}
+        for c in comments:
+            c['author'] = author_map.get(c['user_id'], {})
+    return comments
+
+@api_router.delete("/comments/{comment_id}")
+async def delete_comment(comment_id: str, user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    comment = await db.comments.find_one({'id': comment_id}, {'_id': 0})
+    if not comment:
+        return JSONResponse(status_code=404, content={"error": "Comment not found"})
+    can_delete = comment['user_id'] == user['user_id'] or await is_moderator_or_above(user)
+    if not can_delete:
+        return JSONResponse(status_code=403, content={"error": "Not authorized to delete"})
+    await db.comments.update_one({'id': comment_id}, {'$set': {'is_hidden': True}})
+    return {"message": "Comment deleted"}
 
 # ============ PROFILE ROUTES ============
 
@@ -310,7 +494,9 @@ async def get_public_profile(user_id: str):
     user_data = await db.users.find_one({'id': user_id}, {'_id': 0})
     if not user_data:
         return JSONResponse(status_code=404, content={"error": "User not found"})
-    public = {
+    follower_count = len(user_data.get('followers', []))
+    following_count = len(user_data.get('following', []))
+    return {
         'id': user_data['id'],
         'display_name': user_data.get('display_name', user_data.get('username', '')),
         'username': user_data.get('username', ''),
@@ -318,11 +504,15 @@ async def get_public_profile(user_id: str):
         'banner_image': user_data.get('banner_image', ''),
         'bio': user_data.get('bio', ''),
         'steam_id': user_data.get('steam_id', ''),
+        'roles': user_data.get('roles', []),
         'is_library_public': user_data.get('is_library_public', True),
         'is_collections_public': user_data.get('is_collections_public', True),
+        'followers': user_data.get('followers', []),
+        'following': user_data.get('following', []),
+        'follower_count': follower_count,
+        'following_count': following_count,
         'created_at': user_data.get('created_at', ''),
     }
-    return public
 
 @api_router.get("/profile/{user_id}/games")
 async def get_public_games(user_id: str):
@@ -331,8 +521,7 @@ async def get_public_games(user_id: str):
         return JSONResponse(status_code=404, content={"error": "User not found"})
     if not user_data.get('is_library_public', True):
         return JSONResponse(status_code=403, content={"error": "Library is private"})
-    games = await db.user_games.find({'user_id': user_id}, {'_id': 0}).sort('added_at', -1).to_list(1000)
-    return games
+    return await db.user_games.find({'user_id': user_id}, {'_id': 0}).sort('added_at', -1).to_list(1000)
 
 @api_router.get("/profile/{user_id}/collections")
 async def get_public_collections(user_id: str):
@@ -342,19 +531,16 @@ async def get_public_collections(user_id: str):
     if not user_data.get('is_collections_public', True):
         return JSONResponse(status_code=403, content={"error": "Collections are private"})
     collections = await db.collections.find({'user_id': user_id, 'is_public': True}, {'_id': 0}).to_list(100)
-    all_game_ids = []
+    all_gids = []
     for c in collections:
-        all_game_ids.extend(c.get('game_ids', []))
-    if all_game_ids:
-        all_games = await db.user_games.find(
-            {'id': {'$in': list(set(all_game_ids))}},
-            {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}
-        ).to_list(500)
-        game_map = {g['id']: g for g in all_games}
+        all_gids.extend(c.get('game_ids', []))
+    if all_gids:
+        games = await db.user_games.find({'id': {'$in': list(set(all_gids))}}, {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}).to_list(500)
+        gmap = {g['id']: g for g in games}
     else:
-        game_map = {}
+        gmap = {}
     for c in collections:
-        c['games'] = [game_map[gid] for gid in c.get('game_ids', []) if gid in game_map]
+        c['games'] = [gmap[gid] for gid in c.get('game_ids', []) if gid in gmap]
     return collections
 
 # ============ USER SEARCH ============
@@ -362,11 +548,8 @@ async def get_public_collections(user_id: str):
 @api_router.get("/users/search")
 async def search_users(q: str = Query(..., min_length=1)):
     users = await db.users.find(
-        {'$or': [
-            {'username': {'$regex': q, '$options': 'i'}},
-            {'display_name': {'$regex': q, '$options': 'i'}},
-        ]},
-        {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'is_library_public': 1}
+        {'$or': [{'username': {'$regex': q, '$options': 'i'}}, {'display_name': {'$regex': q, '$options': 'i'}}]},
+        {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'is_library_public': 1, 'roles': 1, 'followers': 1}
     ).limit(20).to_list(20)
     if users:
         user_ids = [u['id'] for u in users]
@@ -378,17 +561,15 @@ async def search_users(q: str = Query(..., min_length=1)):
         for u in users:
             u['avatar_url'] = u.get('custom_avatar') or u.get('avatar_url', '')
             u['game_count'] = count_map.get(u['id'], 0)
+            u['follower_count'] = len(u.get('followers', []))
+            u.pop('followers', None)
     return users
 
 # ============ GAME ROUTES ============
 
 @api_router.get("/games")
-async def get_games(
-    category: Optional[str] = None,
-    search: Optional[str] = None,
-    sort_by: Optional[str] = None,
-    user=Depends(get_current_user)
-):
+async def get_games(category: Optional[str] = None, search: Optional[str] = None,
+                    sort_by: Optional[str] = None, user=Depends(get_current_user)):
     if not user:
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     query = {'user_id': user['user_id']}
@@ -396,26 +577,15 @@ async def get_games(
         query['categories'] = category
     if search:
         query['name'] = {'$regex': search, '$options': 'i'}
-
-    sort_field = 'added_at'
-    sort_dir = -1
-    if sort_by == 'name_asc':
-        sort_field, sort_dir = 'name', 1
-    elif sort_by == 'name_desc':
-        sort_field, sort_dir = 'name', -1
-    elif sort_by == 'price_asc':
-        sort_field, sort_dir = 'price_cents', 1
-    elif sort_by == 'price_desc':
-        sort_field, sort_dir = 'price_cents', -1
-    elif sort_by == 'reviews_desc':
-        sort_field, sort_dir = 'total_reviews', -1
-    elif sort_by == 'release_desc':
-        sort_field, sort_dir = 'release_date', -1
-    elif sort_by == 'release_asc':
-        sort_field, sort_dir = 'release_date', 1
-
-    games = await db.user_games.find(query, {'_id': 0}).sort(sort_field, sort_dir).to_list(1000)
-    return games
+    sort_field, sort_dir = 'added_at', -1
+    if sort_by == 'name_asc': sort_field, sort_dir = 'name', 1
+    elif sort_by == 'name_desc': sort_field, sort_dir = 'name', -1
+    elif sort_by == 'price_asc': sort_field, sort_dir = 'price_cents', 1
+    elif sort_by == 'price_desc': sort_field, sort_dir = 'price_cents', -1
+    elif sort_by == 'reviews_desc': sort_field, sort_dir = 'total_reviews', -1
+    elif sort_by == 'release_desc': sort_field, sort_dir = 'release_date', -1
+    elif sort_by == 'release_asc': sort_field, sort_dir = 'release_date', 1
+    return await db.user_games.find(query, {'_id': 0}).sort(sort_field, sort_dir).to_list(1000)
 
 @api_router.post("/games")
 async def add_game(game: GameAdd, user=Depends(get_current_user)):
@@ -452,13 +622,10 @@ async def update_game_categories(game_id: str, update: GameUpdate, user=Depends(
     if not user:
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     result = await db.user_games.update_one(
-        {'id': game_id, 'user_id': user['user_id']},
-        {'$set': {'categories': update.categories}}
-    )
+        {'id': game_id, 'user_id': user['user_id']}, {'$set': {'categories': update.categories}})
     if result.matched_count == 0:
         return JSONResponse(status_code=404, content={"error": "Game not found"})
-    game = await db.user_games.find_one({'id': game_id}, {'_id': 0})
-    return game
+    return await db.user_games.find_one({'id': game_id}, {'_id': 0})
 
 # ============ COLLECTIONS ============
 
@@ -467,19 +634,16 @@ async def get_collections(user=Depends(get_current_user)):
     if not user:
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     collections = await db.collections.find({'user_id': user['user_id']}, {'_id': 0}).to_list(100)
-    all_game_ids = []
+    all_gids = []
     for c in collections:
-        all_game_ids.extend(c.get('game_ids', []))
-    if all_game_ids:
-        all_games = await db.user_games.find(
-            {'id': {'$in': list(set(all_game_ids))}},
-            {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}
-        ).to_list(500)
-        game_map = {g['id']: g for g in all_games}
+        all_gids.extend(c.get('game_ids', []))
+    if all_gids:
+        games = await db.user_games.find({'id': {'$in': list(set(all_gids))}}, {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}).to_list(500)
+        gmap = {g['id']: g for g in games}
     else:
-        game_map = {}
+        gmap = {}
     for c in collections:
-        c['games'] = [game_map[gid] for gid in c.get('game_ids', []) if gid in game_map]
+        c['games'] = [gmap[gid] for gid in c.get('game_ids', []) if gid in gmap]
     return collections
 
 @api_router.post("/collections")
@@ -487,12 +651,9 @@ async def create_collection(body: CollectionCreate, user=Depends(get_current_use
     if not user:
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     doc = {
-        'id': str(uuid.uuid4()),
-        'user_id': user['user_id'],
-        'name': body.name,
-        'description': body.description,
-        'is_public': body.is_public,
-        'game_ids': body.game_ids,
+        'id': str(uuid.uuid4()), 'user_id': user['user_id'],
+        'name': body.name, 'description': body.description,
+        'is_public': body.is_public, 'game_ids': body.game_ids,
         'created_at': datetime.now(timezone.utc).isoformat(),
         'updated_at': datetime.now(timezone.utc).isoformat(),
     }
@@ -507,13 +668,10 @@ async def update_collection(collection_id: str, body: CollectionUpdate, user=Dep
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     update_dict = {k: v for k, v in body.model_dump().items() if v is not None}
     update_dict['updated_at'] = datetime.now(timezone.utc).isoformat()
-    result = await db.collections.update_one(
-        {'id': collection_id, 'user_id': user['user_id']}, {'$set': update_dict}
-    )
+    result = await db.collections.update_one({'id': collection_id, 'user_id': user['user_id']}, {'$set': update_dict})
     if result.matched_count == 0:
         return JSONResponse(status_code=404, content={"error": "Collection not found"})
-    col = await db.collections.find_one({'id': collection_id}, {'_id': 0})
-    return col
+    return await db.collections.find_one({'id': collection_id}, {'_id': 0})
 
 @api_router.delete("/collections/{collection_id}")
 async def delete_collection(collection_id: str, user=Depends(get_current_user)):
@@ -528,27 +686,25 @@ async def delete_collection(collection_id: str, user=Depends(get_current_user)):
 async def get_shared_collection(collection_id: str):
     col = await db.collections.find_one({'id': collection_id, 'is_public': True}, {'_id': 0})
     if not col:
-        return JSONResponse(status_code=404, content={"error": "Collection not found or is private"})
-    game_ids = col.get('game_ids', [])
-    if game_ids:
-        games = await db.user_games.find({'id': {'$in': game_ids}}, {'_id': 0}).to_list(100)
+        return JSONResponse(status_code=404, content={"error": "Collection not found or private"})
+    gids = col.get('game_ids', [])
+    if gids:
+        games = await db.user_games.find({'id': {'$in': gids}}, {'_id': 0}).to_list(100)
         col['games'] = games
     else:
         col['games'] = []
-    owner = await db.users.find_one({'id': col['user_id']}, {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1})
+    owner = await db.users.find_one({'id': col['user_id']}, {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'roles': 1})
     col['owner'] = owner
     return col
 
-# ============ STEAM PROXY (PUBLIC) ============
+# ============ STEAM PROXY ============
 
 @api_router.get("/steam/search")
 async def steam_search(term: str = Query(..., min_length=1)):
     async with httpx.AsyncClient() as http_client:
         try:
-            resp = await http_client.get(
-                'https://store.steampowered.com/api/storesearch/',
-                params={'term': term, 'l': 'english', 'cc': 'US'}, timeout=10.0
-            )
+            resp = await http_client.get('https://store.steampowered.com/api/storesearch/',
+                params={'term': term, 'l': 'english', 'cc': 'US'}, timeout=10.0)
             if resp.status_code != 200:
                 return JSONResponse(status_code=502, content={"error": "Steam API error"})
             return resp.json()
@@ -567,19 +723,13 @@ async def sync_wishlist(user=Depends(get_current_user)):
     if not user:
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     steam_id = user['steam_id']
-
-    # Use official IWishlistService API
     wishlist_items = []
     try:
         async with httpx.AsyncClient() as http_client:
-            resp = await http_client.get(
-                'https://api.steampowered.com/IWishlistService/GetWishlist/v1/',
-                params={'steamid': steam_id, 'key': STEAM_API_KEY},
-                timeout=15.0
-            )
+            resp = await http_client.get('https://api.steampowered.com/IWishlistService/GetWishlist/v1/',
+                params={'steamid': steam_id, 'key': STEAM_API_KEY}, timeout=15.0)
             if resp.status_code == 200:
-                data = resp.json()
-                wishlist_items = data.get('response', {}).get('items', [])
+                wishlist_items = resp.json().get('response', {}).get('items', [])
     except Exception as e:
         logger.error(f"Wishlist fetch error: {e}")
 
@@ -595,64 +745,46 @@ async def sync_wishlist(user=Depends(get_current_user)):
         if existing:
             continue
         doc = {
-            'id': str(uuid.uuid4()),
-            'user_id': user['user_id'],
-            'app_id': app_id,
+            'id': str(uuid.uuid4()), 'user_id': user['user_id'], 'app_id': app_id,
             'name': f'Game {app_id}',
             'header_image': f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
             'capsule_image': f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/library_600x900.jpg",
-            'screenshots': [],
-            'categories': [],
-            'genres': [],
+            'screenshots': [], 'categories': [], 'genres': [],
             'steam_url': f"https://store.steampowered.com/app/{app_id}",
-            'release_date': '',
-            'short_description': '',
-            'developers': [],
-            'publishers': [],
-            'price_cents': 0,
-            'is_free': False,
-            'review_score': 0,
-            'total_reviews': 0,
-            'is_from_wishlist': True,
-            'added_at': datetime.now(timezone.utc).isoformat()
+            'release_date': '', 'short_description': '', 'developers': [], 'publishers': [],
+            'price_cents': 0, 'is_free': False, 'review_score': 0, 'total_reviews': 0,
+            'is_from_wishlist': True, 'added_at': datetime.now(timezone.utc).isoformat()
         }
         await db.user_games.insert_one(doc)
         added_count += 1
 
-    # Enrich games with details (batch, with rate limiting)
     games_to_enrich = await db.user_games.find(
-        {'user_id': user['user_id'], 'name': {'$regex': '^Game \\d+$'}},
-        {'_id': 0}
+        {'user_id': user['user_id'], 'name': {'$regex': '^Game \\d+$'}}, {'_id': 0}
     ).limit(50).to_list(50)
-
     enriched = 0
     for game in games_to_enrich:
         try:
             details = await fetch_steam_app_details(game['app_id'])
             if details:
                 price_data = details.get('price_overview', {})
-                await db.user_games.update_one(
-                    {'id': game['id']},
-                    {'$set': {
-                        'name': details.get('name', game['name']),
-                        'categories': map_steam_categories(details),
-                        'genres': [g.get('description', '') for g in details.get('genres', [])],
-                        'short_description': details.get('short_description', ''),
-                        'developers': details.get('developers', []),
-                        'publishers': details.get('publishers', []),
-                        'release_date': details.get('release_date', {}).get('date', ''),
-                        'screenshots': [s.get('path_full', '') for s in details.get('screenshots', [])[:6]],
-                        'price_cents': price_data.get('final', 0) if price_data else 0,
-                        'is_free': details.get('is_free', False),
-                        'total_reviews': details.get('recommendations', {}).get('total', 0),
-                    }}
-                )
+                await db.user_games.update_one({'id': game['id']}, {'$set': {
+                    'name': details.get('name', game['name']),
+                    'categories': map_steam_categories(details),
+                    'genres': [g.get('description', '') for g in details.get('genres', [])],
+                    'short_description': details.get('short_description', ''),
+                    'developers': details.get('developers', []),
+                    'publishers': details.get('publishers', []),
+                    'release_date': details.get('release_date', {}).get('date', ''),
+                    'screenshots': [s.get('path_full', '') for s in details.get('screenshots', [])[:6]],
+                    'price_cents': price_data.get('final', 0) if price_data else 0,
+                    'is_free': details.get('is_free', False),
+                    'total_reviews': details.get('recommendations', {}).get('total', 0),
+                }})
                 enriched += 1
             await asyncio.sleep(0.2)
         except Exception:
             continue
-
-    return {"message": f"Synced {added_count} new games from wishlist. Enriched {enriched} with details.", "added_count": added_count}
+    return {"message": f"Synced {added_count} new games. Enriched {enriched} with details.", "added_count": added_count}
 
 # ============ CATEGORIES & HEALTH ============
 
@@ -667,6 +799,10 @@ async def health():
 # ============ SETUP ============
 
 app.include_router(api_router)
+
+# Serve uploaded files
+app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

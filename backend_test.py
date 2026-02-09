@@ -142,10 +142,10 @@ class SteamLibraryAPITester:
     def test_auth_endpoints_without_login(self):
         """Test authenticated endpoints without login - should return 401"""
         endpoints = [
-            ("Get User Games", "GET", "games", 401),
+            ("Get User Games", "GET", "games", 401, None),
             ("Add Game", "POST", "games", 401, {"app_id": 620, "name": "Portal 2"}),
-            ("Get User Profile", "GET", "auth/me", 401),
-            ("Sync Wishlist", "POST", "steam/sync-wishlist", 401)
+            ("Get User Profile", "GET", "auth/me", 401, None),
+            ("Sync Wishlist", "POST", "steam/sync-wishlist", 401, None)
         ]
         
         all_success = True

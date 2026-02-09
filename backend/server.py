@@ -208,7 +208,6 @@ async def steam_callback(request: Request):
     params = dict(request.query_params)
     # Derive base URL from the return_to param (which contains the origin used during login)
     return_to = params.get('openid.return_to', '')
-    from urllib.parse import urlparse
     parsed = urlparse(return_to)
     base_url = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else APP_URL
 

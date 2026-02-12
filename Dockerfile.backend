@@ -1,0 +1,29 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend code
+COPY backend/ .
+
+# Environment variables (override in docker-compose or at runtime)
+ENV MONGO_URL=mongodb://mongo:27017
+ENV DB_NAME=steam_library
+ENV STEAM_API_KEY=""
+ENV JWT_SECRET=""
+ENV APP_URL=http://localhost:8000
+ENV CORS_ORIGINS=*
+
+# Expose port
+EXPOSE 8000
+
+# Run FastAPI app
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

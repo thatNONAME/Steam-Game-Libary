@@ -8,9 +8,11 @@
 
 | Dokument | Beschreibung |
 |----------|-------------|
-| **[DEPLOYMENT_GUIDE_DE.md](./DEPLOYMENT_GUIDE_DE.md)** | 📖 Vollständige Deployment-Anleitung |
+| **[RAILWAY_QUICK_START.md](./RAILWAY_QUICK_START.md)** | 🚀 **EMPFOHLEN** - 5 Min Production Deploy |
+| **[STEAM_API_SETUP.md](./STEAM_API_SETUP.md)** | 🎮 Steam API Konfiguration |
+| **[PRODUCTION_DEPLOYMENT.md](./PRODUCTION_DEPLOYMENT.md)** | 📖 Kompletter Production Guide |
+| **[DEPLOYMENT_GUIDE_DE.md](./DEPLOYMENT_GUIDE_DE.md)** | 🏗️ Manual Server Setup (Advanced) |
 | **[CHANGES.md](./CHANGES.md)** | ✅ Was wurde geändert? |
-| **[README.md](./README.md)** | 📄 Projekt-Übersicht |
 
 ---
 

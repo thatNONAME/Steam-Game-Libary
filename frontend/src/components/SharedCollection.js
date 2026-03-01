@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { ArrowLeft, User, Share2, Gamepad2 } from "lucide-react";
+import { ArrowLeft, User, Share2, Gamepad2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import GameCard from "@/components/GameCard";
+import { RoleBadges } from "@/components/RoleBadge";
+import CommentSection from "@/components/CommentSection";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -14,6 +16,15 @@ export default function SharedCollection() {
   const navigate = useNavigate();
   const [collection, setCollection] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const token = localStorage.getItem("steam_token");
+  let currentUserId = null;
+  try {
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      currentUserId = payload.user_id;
+    }
+  } catch { /* ignore */ }
 
   useEffect(() => {
     const load = async () => {
@@ -31,6 +42,19 @@ export default function SharedCollection() {
     toast.success("Link copied!");
   };
 
+  const handleRemoveGame = async (gameId) => {
+    if (!token) return;
+    try {
+      await axios.delete(`${API}/collections/${id}/games/${gameId}`, { headers: { Authorization: `Bearer ${token}` } });
+      setCollection((prev) => ({
+        ...prev,
+        games: (prev.games || []).filter((g) => g.id !== gameId),
+        game_ids: (prev.game_ids || []).filter((gid) => gid !== gameId),
+      }));
+      toast.success("Game removed from collection");
+    } catch { toast.error("Failed to remove game"); }
+  };
+
   if (loading) return <div className="min-h-[60vh] flex items-center justify-center"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
   if (!collection) return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center text-muted-foreground">
@@ -42,6 +66,7 @@ export default function SharedCollection() {
 
   const owner = collection.owner;
   const games = collection.games || [];
+  const isOwner = currentUserId && owner?.id === currentUserId;
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-8" data-testid="shared-collection">
@@ -56,6 +81,7 @@ export default function SharedCollection() {
               <button onClick={() => navigate(`/profile/${owner.id}`)} className="flex items-center gap-2 mt-2 text-sm text-primary hover:underline" data-testid="collection-owner-link">
                 {owner.avatar_url ? <img src={owner.avatar_url} alt="" className="w-5 h-5 rounded-full" /> : <User className="w-4 h-4" />}
                 <span>by {owner.display_name || owner.username}</span>
+                <RoleBadges roles={owner.roles} />
               </button>
             )}
           </div>
@@ -66,7 +92,17 @@ export default function SharedCollection() {
 
       {games.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-5" data-testid="collection-games-grid">
-          {games.map((g, i) => <GameCard key={g.id} game={g} index={i} />)}
+          {games.map((g, i) => (
+            <div key={g.id} className="relative group">
+              <GameCard game={g} index={i} />
+              {isOwner && (
+                <button onClick={() => handleRemoveGame(g.id)} data-testid={`remove-game-${g.app_id}`}
+                  className="absolute top-2 right-2 w-7 h-7 rounded-full bg-destructive/90 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-destructive">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       ) : (
         <div className="text-center py-20 text-muted-foreground">
@@ -74,6 +110,8 @@ export default function SharedCollection() {
           <p>This collection has no games yet</p>
         </div>
       )}
+
+      <CommentSection targetType="collection" targetId={id} token={token} currentUser={null} />
     </div>
   );
 }

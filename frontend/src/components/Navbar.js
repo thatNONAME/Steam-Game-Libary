@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import ThemeSwitcher from "@/components/ThemeSwitcher";
-import { Menu, LogIn, LogOut, Gamepad2, User, Settings, Users, FolderHeart, Shield, Compass, HelpCircle, Bell } from "lucide-react";
+import { Menu, LogIn, LogOut, Gamepad2, User, Settings, Users, FolderHeart, Shield, Compass, HelpCircle, Bell, CheckCheck, MessageSquare } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;

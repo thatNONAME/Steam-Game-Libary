@@ -60,6 +60,19 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
           </div>
           <div className="hidden md:flex items-center gap-3">
             <ThemeSwitcher theme={theme} setTheme={setTheme} />
+            {user && (
+              <button onClick={() => navigate("/support")} data-testid="nav-support" className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+                <HelpCircle className="w-4 h-4" />
+              </button>
+            )}
+            {user && (
+              <button onClick={() => { navigate("/support"); }} data-testid="nav-notifications" className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-destructive text-[10px] font-bold text-white flex items-center justify-center">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                )}
+              </button>
+            )}
             {user ? (
               <div className="flex items-center gap-3">
                 <button onClick={() => navigate(`/profile/${user.id}`)} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/50 border border-border/50 hover:bg-secondary/70 transition-colors" data-testid="user-avatar-btn">

@@ -198,6 +198,19 @@ async def fetch_steam_app_details(app_id: int):
         except Exception:
             return None
 
+def is_unreleased_game(game):
+    rd = (game.get('release_date') or '').strip().lower()
+    if not rd:
+        return True
+    return any(kw in rd for kw in ['coming soon', 'to be announced', 'tbd', 'tba', 'when it'])
+
+def sort_with_unreleased_last(games, sort_field, sort_dir):
+    released = [g for g in games if not is_unreleased_game(g)]
+    unreleased = [g for g in games if is_unreleased_game(g)]
+    reverse = sort_dir == -1
+    released.sort(key=lambda g: g.get(sort_field) or '', reverse=reverse)
+    return released + unreleased
+
 def extract_app_id_from_url(url: str) -> Optional[int]:
     match = re.search(r'/app/(\d+)', url)
     return int(match.group(1)) if match else None
@@ -585,7 +598,11 @@ async def get_games(category: Optional[str] = None, search: Optional[str] = None
     elif sort_by == 'reviews_desc': sort_field, sort_dir = 'total_reviews', -1
     elif sort_by == 'release_desc': sort_field, sort_dir = 'release_date', -1
     elif sort_by == 'release_asc': sort_field, sort_dir = 'release_date', 1
-    return await db.user_games.find(query, {'_id': 0}).sort(sort_field, sort_dir).to_list(1000)
+    games = await db.user_games.find(query, {'_id': 0}).sort(sort_field, sort_dir).to_list(1000)
+    # Push unreleased games to the bottom of all sorted lists
+    if sort_by and sort_by != 'added':
+        games = sort_with_unreleased_last(games, sort_field, sort_dir)
+    return games
 
 @api_router.post("/games")
 async def add_game(game: GameAdd, user=Depends(get_current_user)):

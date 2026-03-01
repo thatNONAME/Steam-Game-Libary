@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Users, Gamepad2, Loader2 } from "lucide-react";
+import { Search, Users, Gamepad2, Loader2, UserCheck } from "lucide-react";
+import { RoleBadges } from "@/components/RoleBadge";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;

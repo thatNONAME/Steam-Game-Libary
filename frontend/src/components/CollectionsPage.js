@@ -133,10 +133,10 @@ export default function CollectionsPage({ user, token }) {
       {collections.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {collections.map((c) => (
-            <div key={c.id} className="rounded-xl border border-border/50 bg-card/50 p-5 hover:bg-card/80 transition-colors" data-testid={`collection-card-${c.id}`}>
+            <div key={c.id} onClick={() => navigate(`/collection/${c.id}`)} className="rounded-xl border border-border/50 bg-card/50 p-5 hover:bg-card/80 transition-colors cursor-pointer group" data-testid={`collection-card-${c.id}`}>
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-base truncate">{c.name}</h3>
+                  <h3 className="font-semibold text-base truncate group-hover:text-primary transition-colors">{c.name}</h3>
                   {c.description && <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{c.description}</p>}
                 </div>
                 <span className="text-muted-foreground ml-2">{c.is_public ? <Globe className="w-4 h-4" /> : <Lock className="w-4 h-4" />}</span>
@@ -147,10 +147,10 @@ export default function CollectionsPage({ user, token }) {
                 ))}
                 {(c.game_ids || []).length > 5 && <span className="text-xs text-muted-foreground self-center ml-1">+{c.game_ids.length - 5} more</span>}
               </div>
-              <div className="flex items-center gap-2 mt-4">
+              <div className="flex items-center gap-2 mt-4" onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="sm" onClick={() => startEdit(c)} data-testid={`edit-collection-${c.id}`} className="gap-1.5"><Edit2 className="w-3.5 h-3.5" />Edit</Button>
                 {c.is_public && <Button variant="ghost" size="sm" onClick={() => copyShareLink(c.id)} data-testid={`share-collection-${c.id}`} className="gap-1.5"><Share2 className="w-3.5 h-3.5" />Share</Button>}
-                <a href={`/collection/${c.id}`} className="text-xs text-primary flex items-center gap-1 ml-auto hover:underline"><ExternalLink className="w-3 h-3" />View</a>
+                <div className="ml-auto" />
                 <Button variant="ghost" size="sm" onClick={() => handleDelete(c.id)} data-testid={`delete-collection-${c.id}`} className="text-destructive hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></Button>
               </div>
             </div>

@@ -36,6 +36,7 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
             {user && <NavLink to="/collections" icon={FolderHeart} testId="nav-collections">Collections</NavLink>}
             <NavLink to="/users" icon={Users} testId="nav-users">Users</NavLink>
             {user && <NavLink to="/settings" icon={Settings} testId="nav-settings">Settings</NavLink>}
+            {user?.is_owner && <NavLink to="/admin" icon={Shield} testId="nav-admin">Admin</NavLink>}
           </div>
           <div className="hidden md:flex items-center gap-3">
             <ThemeSwitcher theme={theme} setTheme={setTheme} />
@@ -64,6 +65,7 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
                   {user && <NavLink to="/collections" icon={FolderHeart} testId="mobile-nav-collections">Collections</NavLink>}
                   <NavLink to="/users" icon={Users} testId="mobile-nav-users">Users</NavLink>
                   {user && <NavLink to="/settings" icon={Settings} testId="mobile-nav-settings">Settings</NavLink>}
+                  {user?.is_owner && <NavLink to="/admin" icon={Shield} testId="mobile-nav-admin">Admin</NavLink>}
                   <div className="border-t border-border/50 pt-4">
                     <span className="text-xs uppercase tracking-widest text-muted-foreground px-2 mb-2 block">Theme</span>
                     <ThemeSwitcher theme={theme} setTheme={setTheme} mobile />

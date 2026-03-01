@@ -12,6 +12,8 @@ import UserSearch from "@/components/UserSearch";
 import ProfileSettings from "@/components/ProfileSettings";
 import CollectionsPage from "@/components/CollectionsPage";
 import AdminPanel from "@/components/AdminPanel";
+import FollowersPage from "@/components/FollowersPage";
+import DiscoverPage from "@/components/DiscoverPage";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -74,8 +76,10 @@ function AppContent() {
             <Route path="/collections" element={<CollectionsPage user={user} token={token} />} />
             <Route path="/collection/:id" element={<SharedCollection />} />
             <Route path="/profile/:userId" element={<ProfilePage />} />
+            <Route path="/profile/:userId/followers" element={<FollowersPage />} />
             <Route path="/settings" element={<ProfileSettings user={user} token={token} onUpdate={fetchUser} />} />
             <Route path="/users" element={<UserSearch />} />
+            <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/admin" element={<AdminPanel user={user} token={token} />} />
           </Routes>
         </main>

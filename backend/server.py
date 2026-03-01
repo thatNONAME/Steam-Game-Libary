@@ -832,6 +832,142 @@ async def sync_wishlist(user=Depends(get_current_user)):
             continue
     return {"message": f"Synced {added_count} new games. Enriched {enriched} with details.", "added_count": added_count}
 
+# ============ SUPPORT TICKETS ============
+
+@api_router.post("/support")
+async def create_ticket(body: SupportTicketCreate, user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    if not body.subject.strip() or not body.message.strip():
+        return JSONResponse(status_code=400, content={"error": "Subject and message are required"})
+    if len(body.subject) > 200:
+        return JSONResponse(status_code=400, content={"error": "Subject too long (max 200 chars)"})
+    if len(body.message) > 2000:
+        return JSONResponse(status_code=400, content={"error": "Message too long (max 2000 chars)"})
+    doc = {
+        'id': str(uuid.uuid4()),
+        'user_id': user['user_id'],
+        'username': user['username'],
+        'avatar_url': user.get('avatar_url', ''),
+        'subject': body.subject.strip(),
+        'message': body.message.strip(),
+        'category': body.category,
+        'status': 'open',
+        'replies': [],
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }
+    await db.support_tickets.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.get("/support/my")
+async def get_my_tickets(user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    tickets = await db.support_tickets.find(
+        {'user_id': user['user_id']}, {'_id': 0}
+    ).sort('updated_at', -1).to_list(50)
+    return tickets
+
+@api_router.get("/support/all")
+async def get_all_tickets(status_filter: Optional[str] = None, user=Depends(get_current_user)):
+    if not await is_owner(user):
+        return JSONResponse(status_code=403, content={"error": "Only the owner can view all tickets"})
+    query = {}
+    if status_filter and status_filter in ('open', 'answered', 'closed'):
+        query['status'] = status_filter
+    tickets = await db.support_tickets.find(query, {'_id': 0}).sort('updated_at', -1).to_list(200)
+    return tickets
+
+@api_router.post("/support/{ticket_id}/reply")
+async def reply_to_ticket(ticket_id: str, body: SupportTicketReply, user=Depends(get_current_user)):
+    if not await is_owner(user):
+        return JSONResponse(status_code=403, content={"error": "Only the owner can reply to tickets"})
+    if not body.message.strip():
+        return JSONResponse(status_code=400, content={"error": "Reply cannot be empty"})
+    ticket = await db.support_tickets.find_one({'id': ticket_id}, {'_id': 0})
+    if not ticket:
+        return JSONResponse(status_code=404, content={"error": "Ticket not found"})
+    reply = {
+        'id': str(uuid.uuid4()),
+        'message': body.message.strip(),
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+    now = datetime.now(timezone.utc).isoformat()
+    await db.support_tickets.update_one(
+        {'id': ticket_id},
+        {'$push': {'replies': reply}, '$set': {'status': 'answered', 'updated_at': now}}
+    )
+    # Create notification for the ticket author
+    notif = {
+        'id': str(uuid.uuid4()),
+        'user_id': ticket['user_id'],
+        'type': 'support_reply',
+        'title': f'Reply to: {ticket["subject"]}',
+        'message': body.message.strip()[:200],
+        'ticket_id': ticket_id,
+        'is_read': False,
+        'created_at': now,
+    }
+    await db.notifications.insert_one(notif)
+    updated = await db.support_tickets.find_one({'id': ticket_id}, {'_id': 0})
+    return updated
+
+@api_router.post("/support/{ticket_id}/close")
+async def close_ticket(ticket_id: str, user=Depends(get_current_user)):
+    if not await is_owner(user):
+        return JSONResponse(status_code=403, content={"error": "Only the owner can close tickets"})
+    result = await db.support_tickets.update_one(
+        {'id': ticket_id},
+        {'$set': {'status': 'closed', 'updated_at': datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        return JSONResponse(status_code=404, content={"error": "Ticket not found"})
+    return {"message": "Ticket closed"}
+
+# ============ NOTIFICATIONS ============
+
+@api_router.get("/notifications")
+async def get_notifications(user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    notifs = await db.notifications.find(
+        {'user_id': user['user_id']}, {'_id': 0}
+    ).sort('created_at', -1).limit(50).to_list(50)
+    return notifs
+
+@api_router.get("/notifications/unread-count")
+async def get_unread_count(user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    count = await db.notifications.count_documents({'user_id': user['user_id'], 'is_read': False})
+    return {"count": count}
+
+@api_router.post("/notifications/mark-read")
+async def mark_notifications_read(user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    await db.notifications.update_many(
+        {'user_id': user['user_id'], 'is_read': False},
+        {'$set': {'is_read': True}}
+    )
+    return {"message": "All marked as read"}
+
+# ============ REMOVE GAME FROM COLLECTION ============
+
+@api_router.delete("/collections/{collection_id}/games/{game_id}")
+async def remove_game_from_collection(collection_id: str, game_id: str, user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    result = await db.collections.update_one(
+        {'id': collection_id, 'user_id': user['user_id']},
+        {'$pull': {'game_ids': game_id}, '$set': {'updated_at': datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        return JSONResponse(status_code=404, content={"error": "Collection not found"})
+    return {"message": "Game removed from collection"}
+
 # ============ CATEGORIES & HEALTH ============
 
 # ============ DISCOVER FEED ============

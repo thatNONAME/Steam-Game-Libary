@@ -57,6 +57,7 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
             <NavLink to="/users" icon={Users} testId="nav-users">Users</NavLink>
             {user && <NavLink to="/settings" icon={Settings} testId="nav-settings">Settings</NavLink>}
             {user?.is_owner && <NavLink to="/admin" icon={Shield} testId="nav-admin">Admin</NavLink>}
+            {user?.is_owner && <NavLink to="/support/admin" icon={HelpCircle} testId="nav-support-admin">Tickets</NavLink>}
           </div>
           <div className="hidden md:flex items-center gap-3">
             <ThemeSwitcher theme={theme} setTheme={setTheme} />

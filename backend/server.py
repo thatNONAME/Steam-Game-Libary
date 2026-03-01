@@ -404,6 +404,26 @@ async def list_users_with_roles(user=Depends(get_current_user)):
 
 # ============ FOLLOW SYSTEM ============
 
+@api_router.get("/followers/{user_id}")
+async def get_followers_list(user_id: str):
+    user_data = await db.users.find_one({'id': user_id}, {'_id': 0, 'followers': 1, 'following': 1})
+    if not user_data:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    follower_ids = user_data.get('followers', [])
+    following_ids = user_data.get('following', [])
+    all_ids = list(set(follower_ids + following_ids))
+    if all_ids:
+        users = await db.users.find(
+            {'id': {'$in': all_ids}},
+            {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'roles': 1}
+        ).to_list(500)
+        user_map = {u['id']: u for u in users}
+    else:
+        user_map = {}
+    followers = [user_map[uid] for uid in follower_ids if uid in user_map]
+    following = [user_map[uid] for uid in following_ids if uid in user_map]
+    return {"followers": followers, "following": following}
+
 @api_router.post("/follow/{target_user_id}")
 async def follow_user(target_user_id: str, user=Depends(get_current_user)):
     if not user:

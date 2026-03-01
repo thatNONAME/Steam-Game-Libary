@@ -825,6 +825,62 @@ async def sync_wishlist(user=Depends(get_current_user)):
 
 # ============ CATEGORIES & HEALTH ============
 
+# ============ DISCOVER FEED ============
+
+@api_router.get("/discover/collections")
+async def discover_collections(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=50)):
+    skip = (page - 1) * limit
+    collections = await db.collections.find(
+        {'is_public': True}, {'_id': 0}
+    ).sort('created_at', -1).skip(skip).limit(limit).to_list(limit)
+    if collections:
+        all_gids = []
+        owner_ids = []
+        for c in collections:
+            all_gids.extend(c.get('game_ids', []))
+            owner_ids.append(c['user_id'])
+        if all_gids:
+            games = await db.user_games.find(
+                {'id': {'$in': list(set(all_gids))}},
+                {'_id': 0, 'id': 1, 'name': 1, 'app_id': 1, 'capsule_image': 1, 'header_image': 1}
+            ).to_list(500)
+            gmap = {g['id']: g for g in games}
+        else:
+            gmap = {}
+        if owner_ids:
+            owners = await db.users.find(
+                {'id': {'$in': list(set(owner_ids))}},
+                {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'roles': 1}
+            ).to_list(100)
+            owner_map = {o['id']: o for o in owners}
+        else:
+            owner_map = {}
+        for c in collections:
+            c['games'] = [gmap[gid] for gid in c.get('game_ids', []) if gid in gmap]
+            c['owner'] = owner_map.get(c['user_id'], {})
+    return collections
+
+@api_router.get("/discover/users")
+async def discover_users(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=50)):
+    skip = (page - 1) * limit
+    users = await db.users.find(
+        {'is_library_public': True},
+        {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'bio': 1, 'roles': 1, 'followers': 1, 'created_at': 1}
+    ).sort('created_at', -1).skip(skip).limit(limit).to_list(limit)
+    if users:
+        user_ids = [u['id'] for u in users]
+        counts = await db.user_games.aggregate([
+            {'$match': {'user_id': {'$in': user_ids}}},
+            {'$group': {'_id': '$user_id', 'count': {'$sum': 1}}}
+        ]).to_list(100)
+        count_map = {c['_id']: c['count'] for c in counts}
+        for u in users:
+            u['avatar_url'] = u.get('custom_avatar') or u.get('avatar_url', '')
+            u['game_count'] = count_map.get(u['id'], 0)
+            u['follower_count'] = len(u.get('followers', []))
+            u.pop('followers', None)
+    return users
+
 @api_router.get("/categories")
 async def get_categories():
     return CATEGORIES

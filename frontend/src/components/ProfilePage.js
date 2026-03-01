@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
 import { User, Gamepad2, FolderHeart, Calendar, Lock, UserPlus, UserMinus, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import GameCard from "@/components/GameCard";
 import { RoleBadges } from "@/components/RoleBadge";

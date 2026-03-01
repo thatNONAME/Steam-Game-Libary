@@ -1023,8 +1023,10 @@ async def discover_users(page: int = Query(1, ge=1), limit: int = Query(20, ge=1
             u['avatar_url'] = u.get('custom_avatar') or u.get('avatar_url', '')
             u['game_count'] = count_map.get(u['id'], 0)
             u['follower_count'] = len(u.get('followers', []))
-            u['roles'] = u.get('roles', [])  # Ensure roles is always present
+            u['roles'] = u.get('roles', [])
             u.pop('followers', None)
+        # Sort: users with roles first, then by follower count
+        users.sort(key=lambda u: (0 if u.get('roles') else 1, -u.get('follower_count', 0)))
     return users
 
 @api_router.get("/categories")

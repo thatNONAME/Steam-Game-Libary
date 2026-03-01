@@ -118,6 +118,14 @@ class CommentCreate(BaseModel):
 class CommentModerate(BaseModel):
     action: str  # "delete" or "approve"
 
+class SupportTicketCreate(BaseModel):
+    subject: str
+    message: str
+    category: str = "general"  # general, bug, account, feature
+
+class SupportTicketReply(BaseModel):
+    message: str
+
 # ============ Helpers ============
 
 def contains_bad_words(text: str) -> bool:

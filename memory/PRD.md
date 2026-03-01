@@ -1,7 +1,7 @@
 # Game Library - Steam Game Library App
 
 ## Problem Statement
-Full-stack web application for managing and displaying a personal library of Steam games, with social features, collections, role management, and discoverability.
+Full-stack web application for managing and displaying a personal library of Steam games, with social features, collections, role management, support system, and discoverability.
 
 ## Architecture
 - **Frontend**: React + Tailwind CSS + shadcn/ui
@@ -30,23 +30,29 @@ Full-stack web application for managing and displaying a personal library of Ste
 - User search, 5+ themes, sorting, shared collection view
 
 ### Iteration 3 - Social & Discovery (Feb 2026)
-- **FIX**: Unreleased games now sort to bottom of all sorted lists
-- **FIX**: Collection cards are directly clickable (removed View button)
-- **NEW**: Role system (Creator, Admin, Moderator, Tester) with colored badges
-- **NEW**: Admin panel for role management (owner-only, Steam ID 76561199491242446)
-- **NEW**: Follow/unfollow system with follower/following counts
-- **NEW**: Followers/Following list page (/profile/:userId/followers)
-- **NEW**: Comment system with profanity filter on profiles and collections
-- **NEW**: File upload for profile pictures and banners
-- **NEW**: Discover feed with Collections and Users tabs
-- **NEW**: Role badges shown in user search, profiles, comments, discover
-- **NEW**: Admin link in navbar (visible to owner only)
-- **NEW**: Clickable follower count on profiles → followers page
+- Unreleased games sort to bottom of all sorted lists
+- Collection cards directly clickable (no View button)
+- Role system (Creator, Admin, Moderator, Tester) with colored badges
+- Admin panel for role management (owner-only)
+- Follow/unfollow system, followers/following list page
+- Comment system with profanity filter
+- File upload for profile pictures and banners
+- Discover feed with Collections and Users tabs
+- Role badges in user search, profiles, comments, discover
+
+### Iteration 4 - Support System & Collection Management (Feb 2026)
+- **NEW**: Support ticket system — users submit tickets with categories (Bug, Account, Feature, General)
+- **NEW**: Support admin page — owner views all tickets, replies to users, closes tickets
+- **NEW**: Notification system — users get notified when owner replies to their ticket, bell icon in navbar with unread count
+- **NEW**: Remove games from collections — X button on hover in collection view (owner only)
+- **NEW**: Discover users sorted by roles — users with special roles (Creator, Admin, etc.) always appear first
+- **NEW**: Support email shown: suportgamelibary@gmail.com
 
 ## Key Technical Details
 - Creator Steam ID: 76561199491242446
 - Steam API Key: configured in backend/.env
-- MongoDB: users, user_games, collections, comments
+- MongoDB collections: users, user_games, collections, comments, support_tickets, notifications
+- Support email: suportgamelibary@gmail.com
 
 ## Backlog
 ### P1

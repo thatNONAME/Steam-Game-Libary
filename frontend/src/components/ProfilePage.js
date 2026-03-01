@@ -13,6 +13,7 @@ const API = `${BACKEND_URL}/api`;
 
 export default function ProfilePage() {
   const { userId } = useParams();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [games, setGames] = useState([]);
   const [collections, setCollections] = useState([]);
@@ -100,7 +101,7 @@ export default function ProfilePage() {
             <div className="flex items-center gap-4 mt-1 text-xs text-white/50 flex-wrap">
               <span className="flex items-center gap-1"><Gamepad2 className="w-3 h-3" />{games.length} games</span>
               <span className="flex items-center gap-1"><FolderHeart className="w-3 h-3" />{collections.length} collections</span>
-              <span className="flex items-center gap-1"><Users className="w-3 h-3" />{profile.follower_count || 0} followers</span>
+              <span onClick={() => navigate(`/profile/${userId}/followers`)} className="flex items-center gap-1 cursor-pointer hover:text-white transition-colors" data-testid="followers-link"><Users className="w-3 h-3" />{profile.follower_count || 0} followers · {profile.following_count || 0} following</span>
               {profile.created_at && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />Joined {new Date(profile.created_at).toLocaleDateString()}</span>}
             </div>
           </div>

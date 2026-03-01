@@ -23,23 +23,32 @@ export default function ProfilePage() {
   const [followLoading, setFollowLoading] = useState(false);
 
   const token = localStorage.getItem("steam_token");
-  let currentUser = null;
-  try {
-    if (token) {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      currentUser = { id: payload.user_id, steam_id: payload.steam_id };
-    }
-  } catch { /* ignore */ }
+  const currentUser = (() => {
+    try {
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        return { id: payload.user_id, steam_id: payload.steam_id };
+      }
+    } catch { /* ignore */ }
+    return null;
+  })();
 
   const [fullUser, setFullUser] = useState(null);
 
   useEffect(() => {
     const load = async () => {
+      let currentId = null;
+      try {
+        if (token) {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          currentId = payload.user_id;
+        }
+      } catch { /* ignore */ }
       try {
         const pRes = await axios.get(`${API}/profile/${userId}`);
         setProfile(pRes.data);
-        if (currentUser) {
-          setIsFollowing((pRes.data.followers || []).includes(currentUser.id));
+        if (currentId) {
+          setIsFollowing((pRes.data.followers || []).includes(currentId));
         }
         if (pRes.data.is_library_public) {
           const gRes = await axios.get(`${API}/profile/${userId}/games`);

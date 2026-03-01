@@ -99,6 +99,8 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
                   <NavLink to="/discover" icon={Compass} testId="mobile-nav-discover">Discover</NavLink>
                   <NavLink to="/users" icon={Users} testId="mobile-nav-users">Users</NavLink>
                   {user && <NavLink to="/settings" icon={Settings} testId="mobile-nav-settings">Settings</NavLink>}
+                  {user && <NavLink to="/support" icon={HelpCircle} testId="mobile-nav-support">Support</NavLink>}
+                  {user?.is_owner && <NavLink to="/support/admin" icon={HelpCircle} testId="mobile-nav-support-admin">Support Tickets</NavLink>}
                   {user?.is_owner && <NavLink to="/admin" icon={Shield} testId="mobile-nav-admin">Admin</NavLink>}
                   <div className="border-t border-border/50 pt-4">
                     <span className="text-xs uppercase tracking-widest text-muted-foreground px-2 mb-2 block">Theme</span>

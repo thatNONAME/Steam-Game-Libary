@@ -55,9 +55,13 @@ export default function UserSearch() {
                 <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center"><Users className="w-5 h-5 text-muted-foreground" /></div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm truncate">{u.display_name || u.username}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-sm truncate">{u.display_name || u.username}</p>
+                  <RoleBadges roles={u.roles} />
+                </div>
                 <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1"><Gamepad2 className="w-3 h-3" />{u.game_count} games</span>
+                  <span className="flex items-center gap-1"><UserCheck className="w-3 h-3" />{u.follower_count || 0} followers</span>
                   {u.is_library_public ? <span className="text-primary">Public Library</span> : <span>Private</span>}
                 </div>
               </div>

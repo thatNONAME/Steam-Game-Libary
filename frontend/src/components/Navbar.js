@@ -17,23 +17,42 @@ const SteamIcon = ({ className }) => (
 export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [notifOpen, setNotifOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const isActive = (path) => location.pathname === path;
   const token = typeof window !== 'undefined' ? localStorage.getItem("steam_token") : null;
 
-  useEffect(() => {
+  const fetchUnread = useCallback(async () => {
     if (!token) return;
-    const fetchUnread = async () => {
-      try {
-        const res = await axios.get(`${API}/notifications/unread-count`, { headers: { Authorization: `Bearer ${token}` } });
-        setUnreadCount(res.data.count || 0);
-      } catch { /* ignore */ }
-    };
+    try {
+      const res = await axios.get(`${API}/notifications/unread-count`, { headers: { Authorization: `Bearer ${token}` } });
+      setUnreadCount(res.data.count || 0);
+    } catch { /* ignore */ }
+  }, [token]);
+
+  useEffect(() => {
     fetchUnread();
     const interval = setInterval(fetchUnread, 30000);
     return () => clearInterval(interval);
-  }, [token]);
+  }, [fetchUnread]);
+
+  const openNotifications = async () => {
+    setNotifOpen(true);
+    try {
+      const res = await axios.get(`${API}/notifications`, { headers: { Authorization: `Bearer ${token}` } });
+      setNotifications(res.data);
+    } catch { /* ignore */ }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await axios.post(`${API}/notifications/mark-read`, null, { headers: { Authorization: `Bearer ${token}` } });
+      setUnreadCount(0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    } catch { /* ignore */ }
+  };
 
   const NavLink = ({ to, children, icon: Icon, testId }) => (
     <button onClick={() => { navigate(to); setMobileOpen(false); }} data-testid={testId}

@@ -1,7 +1,7 @@
 # Game Library - Steam Game Library App
 
 ## Problem Statement
-Full-stack web application for managing and displaying a personal library of Steam games, with social features, collections, role management, support system, and discoverability.
+Full-stack web application for managing and displaying a personal library of Steam games, with social features, collections, role management, ban system, support tickets, and discoverability.
 
 ## Architecture
 - **Frontend**: React + Tailwind CSS + shadcn/ui
@@ -41,18 +41,35 @@ Full-stack web application for managing and displaying a personal library of Ste
 - Role badges in user search, profiles, comments, discover
 
 ### Iteration 4 - Support System & Collection Management (Feb 2026)
-- **NEW**: Support ticket system — users submit tickets with categories (Bug, Account, Feature, General)
-- **NEW**: Support admin page — owner views all tickets, replies to users, closes tickets
-- **NEW**: Notification system — users get notified when owner replies to their ticket, bell icon in navbar with unread count
-- **NEW**: Remove games from collections — X button on hover in collection view (owner only)
-- **NEW**: Discover users sorted by roles — users with special roles (Creator, Admin, etc.) always appear first
-- **NEW**: Support email shown: suportgamelibary@gmail.com
+- Support ticket system — users submit tickets with categories
+- Support admin page — owner views all tickets, replies, closes
+- Notification system — bell icon with unread count
+- Remove games from collections — X button on hover
+- Discover users sorted by roles first
+
+### Iteration 5 - Role Permissions, Ban System & UX (Feb 2026)
+- **Custom logo**: Controller image as website logo in navbar
+- **Notification bell**: Clicking bell opens popover, marks all notifications as read, red badge disappears
+- **Support in navbar**: Moved from icon to "Support" text link in navbar
+- **User ticket replies**: Users can reply back to staff responses on their tickets (conversation thread)
+- **Role permissions updated**:
+  - Creator: Full access to everything (unchanged)
+  - Admin: Same rights as Creator (role management, admin panel, tickets, bans)
+  - Moderator: Can reply to support tickets + ban/unban users
+  - Tester: Normal user, no special rights
+- **Ban system**: Moderator/Admin/Creator can ban users
+  - Banned users: profile hidden (404), excluded from search & discover, cannot comment
+  - Banned users can still browse the website
+  - Cannot ban Creator or Admin users
+  - Admin panel shows Ban/Unban buttons with BANNED badge
+- **SupportAdmin access**: Moderators and Admins can now access ticket management (not just owner)
 
 ## Key Technical Details
 - Creator Steam ID: 76561199491242446
 - Steam API Key: configured in backend/.env
 - MongoDB collections: users, user_games, collections, comments, support_tickets, notifications
 - Support email: suportgamelibary@gmail.com
+- Role hierarchy: Creator > Admin > Moderator > Tester
 
 ## Backlog
 ### P1

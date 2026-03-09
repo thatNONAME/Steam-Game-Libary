@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import ThemeSwitcher from "@/components/ThemeSwitcher";
-import { Menu, LogIn, LogOut, Gamepad2, User, Settings, Users, FolderHeart, Shield, Compass, HelpCircle, Bell, CheckCheck, MessageSquare } from "lucide-react";
+import { Menu, LogIn, LogOut, User, Settings, Users, FolderHeart, Shield, Compass, HelpCircle, Bell, CheckCheck, MessageSquare } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -13,6 +13,13 @@ const API = `${BACKEND_URL}/api`;
 const SteamIcon = ({ className }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 12-5.373 12-12S18.606 0 11.979 0zM7.54 18.21l-1.473-.61c.262.543.714.999 1.314 1.25 1.297.539 2.793-.076 3.332-1.375.263-.63.264-1.319.005-1.949s-.75-1.121-1.377-1.383c-.624-.26-1.29-.249-1.878-.03l1.523.63c.956.4 1.409 1.5 1.009 2.455-.397.957-1.497 1.41-2.454 1.012H7.54zm11.415-9.303c0-1.662-1.353-3.015-3.015-3.015-1.665 0-3.015 1.353-3.015 3.015 0 1.665 1.35 3.015 3.015 3.015 1.663 0 3.015-1.35 3.015-3.015zm-5.273-.005c0-1.252 1.013-2.266 2.265-2.266 1.249 0 2.266 1.014 2.266 2.266 0 1.251-1.017 2.265-2.266 2.265-1.253 0-2.265-1.014-2.265-2.265z"/></svg>
 );
+
+function hasStaffRole(user) {
+  if (!user) return false;
+  if (user.is_owner) return true;
+  const roles = user.roles || [];
+  return roles.includes('Creator') || roles.includes('Admin') || roles.includes('Moderator');
+}
 
 export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -38,21 +45,20 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
     return () => clearInterval(interval);
   }, [fetchUnread]);
 
-  const openNotifications = async () => {
-    setNotifOpen(true);
+  const handleBellClick = async () => {
+    // Fetch notifications and immediately mark all as read
     try {
       const res = await axios.get(`${API}/notifications`, { headers: { Authorization: `Bearer ${token}` } });
       setNotifications(res.data);
+      if (unreadCount > 0) {
+        await axios.post(`${API}/notifications/mark-read`, null, { headers: { Authorization: `Bearer ${token}` } });
+        setUnreadCount(0);
+      }
     } catch { /* ignore */ }
+    setNotifOpen(true);
   };
 
-  const markAllRead = async () => {
-    try {
-      await axios.post(`${API}/notifications/mark-read`, null, { headers: { Authorization: `Bearer ${token}` } });
-      setUnreadCount(0);
-      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    } catch { /* ignore */ }
-  };
+  const isStaff = hasStaffRole(user);
 
   const NavLink = ({ to, children, icon: Icon, testId }) => (
     <button onClick={() => { navigate(to); setMobileOpen(false); }} data-testid={testId}
@@ -67,32 +73,57 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
       <div className="max-w-[1600px] mx-auto px-4 md:px-8">
         <div className="flex items-center justify-between h-16">
           <button onClick={() => navigate("/")} className="flex items-center gap-3 group" data-testid="logo">
-            <Gamepad2 className="w-7 h-7 text-primary transition-transform group-hover:rotate-12" />
+            <img src="/logo.png" alt="Game Library" className="w-8 h-8 transition-transform group-hover:scale-110" />
             <span className="text-xl font-bold tracking-tight font-['Outfit']">Game Library</span>
           </button>
           <div className="hidden md:flex items-center gap-1">
-            <NavLink to="/" icon={Gamepad2} testId="nav-library">Library</NavLink>
+            <NavLink to="/" testId="nav-library">Library</NavLink>
             {user && <NavLink to="/collections" icon={FolderHeart} testId="nav-collections">Collections</NavLink>}
             <NavLink to="/discover" icon={Compass} testId="nav-discover">Discover</NavLink>
             <NavLink to="/users" icon={Users} testId="nav-users">Users</NavLink>
+            {user && <NavLink to="/support" icon={HelpCircle} testId="nav-support">Support</NavLink>}
             {user && <NavLink to="/settings" icon={Settings} testId="nav-settings">Settings</NavLink>}
-            {user?.is_owner && <NavLink to="/admin" icon={Shield} testId="nav-admin">Admin</NavLink>}
-            {user?.is_owner && <NavLink to="/support/admin" icon={HelpCircle} testId="nav-support-admin">Tickets</NavLink>}
+            {isStaff && <NavLink to="/support/admin" icon={MessageSquare} testId="nav-support-admin">Tickets</NavLink>}
+            {(user?.is_owner || (user?.roles || []).includes('Admin')) && <NavLink to="/admin" icon={Shield} testId="nav-admin">Admin</NavLink>}
           </div>
           <div className="hidden md:flex items-center gap-3">
             <ThemeSwitcher theme={theme} setTheme={setTheme} />
             {user && (
-              <button onClick={() => navigate("/support")} data-testid="nav-support" className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
-                <HelpCircle className="w-4 h-4" />
-              </button>
-            )}
-            {user && (
-              <button onClick={() => { navigate("/support"); }} data-testid="nav-notifications" className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
-                <Bell className="w-4 h-4" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-destructive text-[10px] font-bold text-white flex items-center justify-center">{unreadCount > 9 ? '9+' : unreadCount}</span>
-                )}
-              </button>
+              <Popover open={notifOpen} onOpenChange={setNotifOpen}>
+                <PopoverTrigger asChild>
+                  <button onClick={handleBellClick} data-testid="nav-notifications" className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+                    <Bell className="w-4 h-4" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-destructive text-[10px] font-bold text-white flex items-center justify-center">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 p-0 glass-heavy border-border/50">
+                  <div className="p-3 border-b border-border/30 flex items-center justify-between">
+                    <span className="text-sm font-semibold">Notifications</span>
+                    {notifications.some((n) => !n.is_read) && (
+                      <button onClick={() => { setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true }))); }} data-testid="mark-all-read-btn"
+                        className="text-xs text-primary hover:underline flex items-center gap-1"><CheckCheck className="w-3 h-3" />All read</button>
+                    )}
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {notifications.length > 0 ? notifications.map((n) => (
+                      <button key={n.id} onClick={() => { setNotifOpen(false); navigate("/support"); }} data-testid={`notif-${n.id}`}
+                        className={`flex gap-3 p-3 w-full text-left hover:bg-secondary/30 transition-colors border-b border-border/10 ${!n.is_read ? 'bg-primary/5' : ''}`}>
+                        <MessageSquare className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{n.title}</p>
+                          <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{n.message}</p>
+                          <p className="text-[10px] text-muted-foreground mt-1">{new Date(n.created_at).toLocaleDateString()}</p>
+                        </div>
+                        {!n.is_read && <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1" />}
+                      </button>
+                    )) : (
+                      <div className="p-6 text-center text-muted-foreground text-sm">No notifications</div>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             )}
             {user ? (
               <div className="flex items-center gap-3">
@@ -110,19 +141,27 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
               </Button>
             )}
           </div>
-          <div className="md:hidden">
+          <div className="md:hidden flex items-center gap-2">
+            {user && (
+              <button onClick={handleBellClick} data-testid="mobile-notifications" className="relative p-2 rounded-lg text-muted-foreground">
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-destructive text-[10px] font-bold text-white flex items-center justify-center">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                )}
+              </button>
+            )}
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild><Button variant="ghost" size="icon" data-testid="mobile-menu-btn"><Menu className="w-5 h-5" /></Button></SheetTrigger>
               <SheetContent side="right" className="w-72 glass-heavy border-border/50">
                 <div className="flex flex-col gap-4 mt-8">
-                  <NavLink to="/" icon={Gamepad2} testId="mobile-nav-library">Library</NavLink>
+                  <NavLink to="/" testId="mobile-nav-library">Library</NavLink>
                   {user && <NavLink to="/collections" icon={FolderHeart} testId="mobile-nav-collections">Collections</NavLink>}
                   <NavLink to="/discover" icon={Compass} testId="mobile-nav-discover">Discover</NavLink>
                   <NavLink to="/users" icon={Users} testId="mobile-nav-users">Users</NavLink>
-                  {user && <NavLink to="/settings" icon={Settings} testId="mobile-nav-settings">Settings</NavLink>}
                   {user && <NavLink to="/support" icon={HelpCircle} testId="mobile-nav-support">Support</NavLink>}
-                  {user?.is_owner && <NavLink to="/support/admin" icon={HelpCircle} testId="mobile-nav-support-admin">Support Tickets</NavLink>}
-                  {user?.is_owner && <NavLink to="/admin" icon={Shield} testId="mobile-nav-admin">Admin</NavLink>}
+                  {user && <NavLink to="/settings" icon={Settings} testId="mobile-nav-settings">Settings</NavLink>}
+                  {isStaff && <NavLink to="/support/admin" icon={MessageSquare} testId="mobile-nav-support-admin">Tickets</NavLink>}
+                  {(user?.is_owner || (user?.roles || []).includes('Admin')) && <NavLink to="/admin" icon={Shield} testId="mobile-nav-admin">Admin</NavLink>}
                   <div className="border-t border-border/50 pt-4">
                     <span className="text-xs uppercase tracking-widest text-muted-foreground px-2 mb-2 block">Theme</span>
                     <ThemeSwitcher theme={theme} setTheme={setTheme} mobile />

@@ -150,6 +150,17 @@ async def is_owner(user) -> bool:
         return False
     return user.get('steam_id') == OWNER_STEAM_ID
 
+async def is_admin_or_above(user) -> bool:
+    if not user:
+        return False
+    if user.get('steam_id') == OWNER_STEAM_ID:
+        return True
+    user_data = await db.users.find_one({'steam_id': user['steam_id']}, {'_id': 0, 'roles': 1})
+    if not user_data:
+        return False
+    roles = user_data.get('roles', [])
+    return any(r in roles for r in ['Creator', 'Admin'])
+
 async def is_moderator_or_above(user) -> bool:
     if not user:
         return False
@@ -160,6 +171,10 @@ async def is_moderator_or_above(user) -> bool:
         return False
     roles = user_data.get('roles', [])
     return any(r in roles for r in ['Creator', 'Admin', 'Moderator'])
+
+async def is_user_banned(user_id: str) -> bool:
+    user_data = await db.users.find_one({'id': user_id}, {'_id': 0, 'is_banned': 1})
+    return user_data.get('is_banned', False) if user_data else False
 
 def map_steam_categories(game_data):
     if not game_data:
@@ -377,12 +392,12 @@ async def upload_image(file: UploadFile = File(...), user=Depends(get_current_us
     url = f"/api/uploads/{filename}"
     return {"url": url, "filename": filename}
 
-# ============ ROLE MANAGEMENT (Owner Only) ============
+# ============ ROLE MANAGEMENT (Owner + Admin) ============
 
 @api_router.post("/roles/assign")
 async def assign_role(body: RoleAssign, user=Depends(get_current_user)):
-    if not await is_owner(user):
-        return JSONResponse(status_code=403, content={"error": "Only the site owner can manage roles"})
+    if not await is_admin_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Only Creator/Admin can manage roles"})
     if body.role not in VALID_ROLES:
         return JSONResponse(status_code=400, content={"error": f"Invalid role. Valid: {VALID_ROLES}"})
     result = await db.users.update_one({'id': body.target_user_id}, {'$addToSet': {'roles': body.role}})
@@ -393,8 +408,8 @@ async def assign_role(body: RoleAssign, user=Depends(get_current_user)):
 
 @api_router.post("/roles/remove")
 async def remove_role(body: RoleRemove, user=Depends(get_current_user)):
-    if not await is_owner(user):
-        return JSONResponse(status_code=403, content={"error": "Only the site owner can manage roles"})
+    if not await is_admin_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Only Creator/Admin can manage roles"})
     if body.role not in VALID_ROLES:
         return JSONResponse(status_code=400, content={"error": f"Invalid role. Valid: {VALID_ROLES}"})
     await db.users.update_one({'id': body.target_user_id}, {'$pull': {'roles': body.role}})
@@ -403,12 +418,39 @@ async def remove_role(body: RoleRemove, user=Depends(get_current_user)):
 
 @api_router.get("/roles/users")
 async def list_users_with_roles(user=Depends(get_current_user)):
-    if not await is_owner(user):
-        return JSONResponse(status_code=403, content={"error": "Only the owner can view this"})
+    if not await is_admin_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Only Creator/Admin can view this"})
     users = await db.users.find(
-        {}, {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'roles': 1, 'steam_id': 1}
+        {}, {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'roles': 1, 'steam_id': 1, 'is_banned': 1}
     ).to_list(500)
     return users
+
+# ============ BAN SYSTEM ============
+
+@api_router.post("/ban/{target_user_id}")
+async def ban_user(target_user_id: str, user=Depends(get_current_user)):
+    if not await is_moderator_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Only Moderator/Admin/Creator can ban users"})
+    # Cannot ban staff members
+    target = await db.users.find_one({'id': target_user_id}, {'_id': 0, 'roles': 1, 'steam_id': 1})
+    if not target:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    if target.get('steam_id') == OWNER_STEAM_ID:
+        return JSONResponse(status_code=403, content={"error": "Cannot ban the Creator"})
+    target_roles = target.get('roles', [])
+    if any(r in target_roles for r in ['Creator', 'Admin']):
+        return JSONResponse(status_code=403, content={"error": "Cannot ban Creator/Admin users"})
+    await db.users.update_one({'id': target_user_id}, {'$set': {'is_banned': True}})
+    return {"message": "User banned", "user_id": target_user_id}
+
+@api_router.post("/unban/{target_user_id}")
+async def unban_user(target_user_id: str, user=Depends(get_current_user)):
+    if not await is_moderator_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Only Moderator/Admin/Creator can unban users"})
+    result = await db.users.update_one({'id': target_user_id}, {'$set': {'is_banned': False}})
+    if result.matched_count == 0:
+        return JSONResponse(status_code=404, content={"error": "User not found"})
+    return {"message": "User unbanned", "user_id": target_user_id}
 
 # ============ FOLLOW SYSTEM ============
 
@@ -459,6 +501,8 @@ async def unfollow_user(target_user_id: str, user=Depends(get_current_user)):
 async def create_comment(body: CommentCreate, user=Depends(get_current_user)):
     if not user:
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    if await is_user_banned(user['user_id']):
+        return JSONResponse(status_code=403, content={"error": "Your account is restricted. You cannot post comments."})
     if not body.content.strip():
         return JSONResponse(status_code=400, content={"error": "Comment cannot be empty"})
     if len(body.content) > 500:
@@ -535,6 +579,9 @@ async def get_public_profile(user_id: str):
     user_data = await db.users.find_one({'id': user_id}, {'_id': 0})
     if not user_data:
         return JSONResponse(status_code=404, content={"error": "User not found"})
+    # Banned users are hidden from public view
+    if user_data.get('is_banned'):
+        return JSONResponse(status_code=404, content={"error": "This profile is not available"})
     follower_count = len(user_data.get('followers', []))
     following_count = len(user_data.get('following', []))
     return {
@@ -589,7 +636,7 @@ async def get_public_collections(user_id: str):
 @api_router.get("/users/search")
 async def search_users(q: str = Query(..., min_length=1)):
     users = await db.users.find(
-        {'$or': [{'username': {'$regex': q, '$options': 'i'}}, {'display_name': {'$regex': q, '$options': 'i'}}]},
+        {'$or': [{'username': {'$regex': q, '$options': 'i'}}, {'display_name': {'$regex': q, '$options': 'i'}}], 'is_banned': {'$ne': True}},
         {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'is_library_public': 1, 'roles': 1, 'followers': 1}
     ).limit(20).to_list(20)
     if users:
@@ -872,8 +919,8 @@ async def get_my_tickets(user=Depends(get_current_user)):
 
 @api_router.get("/support/all")
 async def get_all_tickets(status_filter: Optional[str] = None, user=Depends(get_current_user)):
-    if not await is_owner(user):
-        return JSONResponse(status_code=403, content={"error": "Only the owner can view all tickets"})
+    if not await is_moderator_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Staff access required"})
     query = {}
     if status_filter and status_filter in ('open', 'answered', 'closed'):
         query['status'] = status_filter
@@ -882,8 +929,8 @@ async def get_all_tickets(status_filter: Optional[str] = None, user=Depends(get_
 
 @api_router.post("/support/{ticket_id}/reply")
 async def reply_to_ticket(ticket_id: str, body: SupportTicketReply, user=Depends(get_current_user)):
-    if not await is_owner(user):
-        return JSONResponse(status_code=403, content={"error": "Only the owner can reply to tickets"})
+    if not await is_moderator_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Staff access required"})
     if not body.message.strip():
         return JSONResponse(status_code=400, content={"error": "Reply cannot be empty"})
     ticket = await db.support_tickets.find_one({'id': ticket_id}, {'_id': 0})
@@ -891,6 +938,8 @@ async def reply_to_ticket(ticket_id: str, body: SupportTicketReply, user=Depends
         return JSONResponse(status_code=404, content={"error": "Ticket not found"})
     reply = {
         'id': str(uuid.uuid4()),
+        'author': 'staff',
+        'author_name': user.get('username', 'Staff'),
         'message': body.message.strip(),
         'created_at': datetime.now(timezone.utc).isoformat(),
     }
@@ -899,7 +948,6 @@ async def reply_to_ticket(ticket_id: str, body: SupportTicketReply, user=Depends
         {'id': ticket_id},
         {'$push': {'replies': reply}, '$set': {'status': 'answered', 'updated_at': now}}
     )
-    # Create notification for the ticket author
     notif = {
         'id': str(uuid.uuid4()),
         'user_id': ticket['user_id'],
@@ -914,10 +962,36 @@ async def reply_to_ticket(ticket_id: str, body: SupportTicketReply, user=Depends
     updated = await db.support_tickets.find_one({'id': ticket_id}, {'_id': 0})
     return updated
 
+@api_router.post("/support/{ticket_id}/user-reply")
+async def user_reply_to_ticket(ticket_id: str, body: SupportTicketReply, user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    if not body.message.strip():
+        return JSONResponse(status_code=400, content={"error": "Reply cannot be empty"})
+    ticket = await db.support_tickets.find_one({'id': ticket_id, 'user_id': user['user_id']}, {'_id': 0})
+    if not ticket:
+        return JSONResponse(status_code=404, content={"error": "Ticket not found or not yours"})
+    if ticket.get('status') == 'closed':
+        return JSONResponse(status_code=400, content={"error": "Cannot reply to closed tickets"})
+    reply = {
+        'id': str(uuid.uuid4()),
+        'author': 'user',
+        'author_name': user.get('username', 'User'),
+        'message': body.message.strip(),
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+    now = datetime.now(timezone.utc).isoformat()
+    await db.support_tickets.update_one(
+        {'id': ticket_id},
+        {'$push': {'replies': reply}, '$set': {'status': 'open', 'updated_at': now}}
+    )
+    updated = await db.support_tickets.find_one({'id': ticket_id}, {'_id': 0})
+    return updated
+
 @api_router.post("/support/{ticket_id}/close")
 async def close_ticket(ticket_id: str, user=Depends(get_current_user)):
-    if not await is_owner(user):
-        return JSONResponse(status_code=403, content={"error": "Only the owner can close tickets"})
+    if not await is_moderator_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Staff access required"})
     result = await db.support_tickets.update_one(
         {'id': ticket_id},
         {'$set': {'status': 'closed', 'updated_at': datetime.now(timezone.utc).isoformat()}}
@@ -1009,7 +1083,7 @@ async def discover_collections(page: int = Query(1, ge=1), limit: int = Query(20
 async def discover_users(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=50)):
     skip = (page - 1) * limit
     users = await db.users.find(
-        {'is_library_public': True},
+        {'is_library_public': True, 'is_banned': {'$ne': True}},
         {'_id': 0, 'id': 1, 'username': 1, 'display_name': 1, 'avatar_url': 1, 'custom_avatar': 1, 'bio': 1, 'roles': 1, 'followers': 1, 'created_at': 1}
     ).sort('created_at', -1).skip(skip).limit(limit).to_list(limit)
     if users:

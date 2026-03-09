@@ -21,6 +21,13 @@ const STATUS_STYLES = {
   closed: { color: "text-muted-foreground", icon: XCircle },
 };
 
+function isStaff(user) {
+  if (!user) return false;
+  if (user.is_owner) return true;
+  const roles = user.roles || [];
+  return roles.includes('Creator') || roles.includes('Admin') || roles.includes('Moderator');
+}
+
 export default function SupportAdmin({ user, token }) {
   const navigate = useNavigate();
   const [tickets, setTickets] = useState([]);
@@ -43,7 +50,7 @@ export default function SupportAdmin({ user, token }) {
   }, [token, statusFilter, navigate]);
 
   useEffect(() => {
-    if (!user?.is_owner) { navigate("/"); return; }
+    if (!isStaff(user)) { navigate("/"); return; }
     fetchTickets();
   }, [user, fetchTickets, navigate]);
 
@@ -69,7 +76,7 @@ export default function SupportAdmin({ user, token }) {
     } catch { toast.error("Failed to close"); }
   };
 
-  if (!user?.is_owner) return null;
+  if (!isStaff(user)) return null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-8 py-8" data-testid="support-admin">
@@ -158,8 +165,10 @@ export default function SupportAdmin({ user, token }) {
                   <p className="text-sm whitespace-pre-wrap">{selectedTicket.message}</p>
                 </div>
                 {(selectedTicket.replies || []).map((r) => (
-                  <div key={r.id} className="rounded-lg bg-primary/5 border border-primary/20 p-3">
-                    <p className="text-xs text-primary mb-1 font-medium">Your Reply · {new Date(r.created_at).toLocaleDateString()}</p>
+                  <div key={r.id} className={`rounded-lg p-3 ${r.author === 'user' ? 'bg-secondary/20 border border-border/30' : 'bg-primary/5 border border-primary/20'}`}>
+                    <p className={`text-xs mb-1 font-medium ${r.author === 'user' ? 'text-muted-foreground' : 'text-primary'}`}>
+                      {r.author === 'user' ? `${r.author_name || selectedTicket.username}` : `Staff (${r.author_name || 'Admin'})`} · {new Date(r.created_at).toLocaleDateString()}
+                    </p>
                     <p className="text-sm whitespace-pre-wrap">{r.message}</p>
                   </div>
                 ))}

@@ -30,6 +30,8 @@ export default function SupportPage({ user, token }) {
   const [showForm, setShowForm] = useState(false);
   const [expandedTicket, setExpandedTicket] = useState(null);
   const [form, setForm] = useState({ subject: "", message: "", category: "general" });
+  const [replyTexts, setReplyTexts] = useState({});
+  const [replyingTo, setReplyingTo] = useState(null);
 
   const fetchTickets = useCallback(async () => {
     if (!token) return;
@@ -56,6 +58,19 @@ export default function SupportPage({ user, token }) {
       fetchTickets();
     } catch (err) { toast.error(err.response?.data?.error || "Failed to submit"); }
     finally { setSubmitting(false); }
+  };
+
+  const handleUserReply = async (ticketId) => {
+    const text = replyTexts[ticketId];
+    if (!text?.trim()) return;
+    setReplyingTo(ticketId);
+    try {
+      await axios.post(`${API}/support/${ticketId}/user-reply`, { message: text.trim() }, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success("Reply sent");
+      setReplyTexts((prev) => ({ ...prev, [ticketId]: "" }));
+      fetchTickets();
+    } catch (err) { toast.error(err.response?.data?.error || "Failed to reply"); }
+    finally { setReplyingTo(null); }
   };
 
   if (!user) return null;
@@ -140,12 +155,28 @@ export default function SupportPage({ user, token }) {
                       <p className="text-sm whitespace-pre-wrap">{t.message}</p>
                     </div>
                     {(t.replies || []).map((r) => (
-                      <div key={r.id} className="rounded-lg bg-primary/5 border border-primary/20 p-3">
-                        <p className="text-xs text-primary mb-1 font-medium">Admin Reply · {new Date(r.created_at).toLocaleDateString()}</p>
+                      <div key={r.id} className={`rounded-lg p-3 ${r.author === 'user' ? 'bg-secondary/20 border border-border/30' : 'bg-primary/5 border border-primary/20'}`}>
+                        <p className={`text-xs mb-1 font-medium ${r.author === 'user' ? 'text-muted-foreground' : 'text-primary'}`}>
+                          {r.author === 'user' ? 'You' : `Staff (${r.author_name || 'Admin'})`} · {new Date(r.created_at).toLocaleDateString()}
+                        </p>
                         <p className="text-sm whitespace-pre-wrap">{r.message}</p>
                       </div>
                     ))}
-                    {t.replies?.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Waiting for a response...</p>}
+                    {t.status === 'closed' ? (
+                      <p className="text-xs text-muted-foreground text-center py-2">This ticket is closed</p>
+                    ) : t.status === 'answered' ? (
+                      <div className="space-y-2 pt-1">
+                        <textarea value={replyTexts[t.id] || ""} onChange={(e) => setReplyTexts((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                          data-testid={`user-reply-input-${t.id}`}
+                          className="w-full h-16 px-3 py-2 rounded-lg bg-secondary/30 border border-border/50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
+                          placeholder="Reply to the staff response..." maxLength={2000} />
+                        <Button size="sm" onClick={() => handleUserReply(t.id)} disabled={replyingTo === t.id || !(replyTexts[t.id]?.trim())} data-testid={`user-reply-btn-${t.id}`} className="rounded-full gap-1.5 w-full">
+                          {replyingTo === t.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}Reply
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-2">Waiting for a response...</p>
+                    )}
                   </div>
                 )}
               </div>

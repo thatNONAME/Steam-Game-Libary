@@ -4,7 +4,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Shield, Search, UserCheck, X, Loader2 } from "lucide-react";
+import { Shield, Search, UserCheck, X, Loader2, Ban, CheckCircle } from "lucide-react";
 import { RoleBadges } from "@/components/RoleBadge";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -17,12 +17,20 @@ const ROLES = [
   { name: "Tester", color: "bg-green-500 hover:bg-green-600" },
 ];
 
+function isAdminOrAbove(user) {
+  if (!user) return false;
+  if (user.is_owner) return true;
+  const roles = user.roles || [];
+  return roles.includes('Creator') || roles.includes('Admin');
+}
+
 export default function AdminPanel({ user, token }) {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [assigning, setAssigning] = useState(null);
+  const [banning, setBanning] = useState(null);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -35,7 +43,7 @@ export default function AdminPanel({ user, token }) {
   }, [token, navigate]);
 
   useEffect(() => {
-    if (!user?.is_owner) { navigate("/"); return; }
+    if (!isAdminOrAbove(user)) { navigate("/"); return; }
     fetchUsers();
   }, [user, fetchUsers, navigate]);
 
@@ -59,6 +67,26 @@ export default function AdminPanel({ user, token }) {
     finally { setAssigning(null); }
   };
 
+  const handleBan = async (userId) => {
+    setBanning(userId);
+    try {
+      await axios.post(`${API}/ban/${userId}`, null, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success("User banned — profile hidden, commenting disabled");
+      fetchUsers();
+    } catch (err) { toast.error(err.response?.data?.error || "Failed to ban"); }
+    finally { setBanning(null); }
+  };
+
+  const handleUnban = async (userId) => {
+    setBanning(userId);
+    try {
+      await axios.post(`${API}/unban/${userId}`, null, { headers: { Authorization: `Bearer ${token}` } });
+      toast.success("User unbanned");
+      fetchUsers();
+    } catch (err) { toast.error(err.response?.data?.error || "Failed to unban"); }
+    finally { setBanning(null); }
+  };
+
   const filtered = searchQuery.trim()
     ? users.filter((u) =>
         (u.username || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -66,15 +94,15 @@ export default function AdminPanel({ user, token }) {
       )
     : users;
 
-  if (!user?.is_owner) return null;
+  if (!isAdminOrAbove(user)) return null;
 
   return (
     <div className="max-w-4xl mx-auto px-4 md:px-8 py-8" data-testid="admin-panel">
       <div className="flex items-center gap-3 mb-8">
         <Shield className="w-8 h-8 text-primary" />
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold font-['Outfit']">Role Management</h1>
-          <p className="text-muted-foreground text-sm">Assign roles to users</p>
+          <h1 className="text-2xl md:text-3xl font-bold font-['Outfit']">Admin Panel</h1>
+          <p className="text-muted-foreground text-sm">Manage roles and user bans</p>
         </div>
       </div>
 
@@ -84,7 +112,6 @@ export default function AdminPanel({ user, token }) {
           data-testid="admin-search" className="pl-10 bg-secondary/30 border-border/50 rounded-full" />
       </div>
 
-      {/* Role legend */}
       <div className="flex flex-wrap gap-2 mb-6">
         {ROLES.map((r) => (
           <span key={r.name} className={`px-3 py-1 rounded-full text-xs font-medium text-white ${r.color}`}>{r.name}</span>
@@ -98,15 +125,34 @@ export default function AdminPanel({ user, token }) {
           {filtered.map((u) => {
             const userRoles = u.roles || [];
             const avatar = u.custom_avatar || u.avatar_url;
+            const isBanned = u.is_banned;
+            const isCreator = u.steam_id === '76561199491242446';
             return (
-              <div key={u.id} className="p-4 rounded-xl border border-border/50 bg-card/50" data-testid={`admin-user-${u.id}`}>
+              <div key={u.id} className={`p-4 rounded-xl border bg-card/50 ${isBanned ? 'border-destructive/40 bg-destructive/5' : 'border-border/50'}`} data-testid={`admin-user-${u.id}`}>
                 <div className="flex items-center gap-3 mb-3">
                   {avatar ? <img src={avatar} alt="" className="w-10 h-10 rounded-full" /> : <UserCheck className="w-8 h-8 text-muted-foreground" />}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{u.display_name || u.username}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-sm truncate">{u.display_name || u.username}</p>
+                      <RoleBadges roles={userRoles} />
+                      {isBanned && <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-destructive/20 text-destructive border border-destructive/30">BANNED</span>}
+                    </div>
                     <p className="text-xs text-muted-foreground">@{u.username}</p>
                   </div>
-                  <RoleBadges roles={userRoles} />
+                  {/* Ban/Unban button */}
+                  {!isCreator && (
+                    isBanned ? (
+                      <Button size="sm" variant="outline" onClick={() => handleUnban(u.id)} disabled={banning === u.id} data-testid={`unban-${u.id}`}
+                        className="gap-1.5 text-xs rounded-full border-green-500/30 text-green-500 hover:bg-green-500/10">
+                        {banning === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}Unban
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => handleBan(u.id)} disabled={banning === u.id} data-testid={`ban-${u.id}`}
+                        className="gap-1.5 text-xs rounded-full border-destructive/30 text-destructive hover:bg-destructive/10">
+                        {banning === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}Ban
+                      </Button>
+                    )
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {ROLES.map((r) => {

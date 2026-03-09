@@ -126,6 +126,9 @@ class SupportTicketCreate(BaseModel):
 class SupportTicketReply(BaseModel):
     message: str
 
+class UnbanAppealCreate(BaseModel):
+    reason: str
+
 # ============ Helpers ============
 
 def contains_bad_words(text: str) -> bool:
@@ -403,6 +406,11 @@ async def assign_role(body: RoleAssign, user=Depends(get_current_user)):
     result = await db.users.update_one({'id': body.target_user_id}, {'$addToSet': {'roles': body.role}})
     if result.matched_count == 0:
         return JSONResponse(status_code=404, content={"error": "User not found"})
+    await db.moderation_log.insert_one({
+        'id': str(uuid.uuid4()), 'action': 'role_assign', 'target_user_id': body.target_user_id,
+        'target_username': '', 'performed_by': user.get('username', ''),
+        'details': f'Assigned role: {body.role}', 'created_at': datetime.now(timezone.utc).isoformat()
+    })
     updated = await db.users.find_one({'id': body.target_user_id}, {'_id': 0, 'id': 1, 'username': 1, 'roles': 1})
     return updated
 
@@ -413,6 +421,11 @@ async def remove_role(body: RoleRemove, user=Depends(get_current_user)):
     if body.role not in VALID_ROLES:
         return JSONResponse(status_code=400, content={"error": f"Invalid role. Valid: {VALID_ROLES}"})
     await db.users.update_one({'id': body.target_user_id}, {'$pull': {'roles': body.role}})
+    await db.moderation_log.insert_one({
+        'id': str(uuid.uuid4()), 'action': 'role_remove', 'target_user_id': body.target_user_id,
+        'target_username': '', 'performed_by': user.get('username', ''),
+        'details': f'Removed role: {body.role}', 'created_at': datetime.now(timezone.utc).isoformat()
+    })
     updated = await db.users.find_one({'id': body.target_user_id}, {'_id': 0, 'id': 1, 'username': 1, 'roles': 1})
     return updated
 
@@ -441,6 +454,11 @@ async def ban_user(target_user_id: str, user=Depends(get_current_user)):
     if any(r in target_roles for r in ['Creator', 'Admin']):
         return JSONResponse(status_code=403, content={"error": "Cannot ban Creator/Admin users"})
     await db.users.update_one({'id': target_user_id}, {'$set': {'is_banned': True}})
+    await db.moderation_log.insert_one({
+        'id': str(uuid.uuid4()), 'action': 'ban', 'target_user_id': target_user_id,
+        'target_username': target.get('username', ''), 'performed_by': user.get('username', ''),
+        'details': 'User banned', 'created_at': datetime.now(timezone.utc).isoformat()
+    })
     return {"message": "User banned", "user_id": target_user_id}
 
 @api_router.post("/unban/{target_user_id}")
@@ -450,6 +468,11 @@ async def unban_user(target_user_id: str, user=Depends(get_current_user)):
     result = await db.users.update_one({'id': target_user_id}, {'$set': {'is_banned': False}})
     if result.matched_count == 0:
         return JSONResponse(status_code=404, content={"error": "User not found"})
+    await db.moderation_log.insert_one({
+        'id': str(uuid.uuid4()), 'action': 'unban', 'target_user_id': target_user_id,
+        'target_username': '', 'performed_by': user.get('username', ''),
+        'details': 'User unbanned', 'created_at': datetime.now(timezone.utc).isoformat()
+    })
     return {"message": "User unbanned", "user_id": target_user_id}
 
 # ============ FOLLOW SYSTEM ============
@@ -575,12 +598,21 @@ async def update_profile(update: ProfileUpdate, user=Depends(get_current_user)):
     return updated
 
 @api_router.get("/profile/{user_id}")
-async def get_public_profile(user_id: str):
+async def get_public_profile(user_id: str, authorization: Optional[str] = Header(None)):
     user_data = await db.users.find_one({'id': user_id}, {'_id': 0})
     if not user_data:
+        user_data = await db.users.find_one({'steam_id': user_id}, {'_id': 0})
+    if not user_data:
         return JSONResponse(status_code=404, content={"error": "User not found"})
-    # Banned users are hidden from public view
-    if user_data.get('is_banned'):
+    # Allow self-view even if banned
+    is_self = False
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            payload = jwt.decode(authorization.replace("Bearer ", ""), JWT_SECRET, algorithms=["HS256"])
+            is_self = payload.get('user_id') == user_data.get('id')
+        except Exception:
+            pass
+    if user_data.get('is_banned') and not is_self:
         return JSONResponse(status_code=404, content={"error": "This profile is not available"})
     follower_count = len(user_data.get('followers', []))
     following_count = len(user_data.get('following', []))
@@ -593,6 +625,7 @@ async def get_public_profile(user_id: str):
         'bio': user_data.get('bio', ''),
         'steam_id': user_data.get('steam_id', ''),
         'roles': user_data.get('roles', []),
+        'is_banned': user_data.get('is_banned', False),
         'is_library_public': user_data.get('is_library_public', True),
         'is_collections_public': user_data.get('is_collections_public', True),
         'followers': user_data.get('followers', []),
@@ -1041,6 +1074,173 @@ async def remove_game_from_collection(collection_id: str, game_id: str, user=Dep
     if result.matched_count == 0:
         return JSONResponse(status_code=404, content={"error": "Collection not found"})
     return {"message": "Game removed from collection"}
+
+# ============ COLLECTION PICTURE ============
+
+@api_router.post("/collections/{collection_id}/picture")
+async def upload_collection_picture(collection_id: str, file: UploadFile = File(...), user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    allowed = {'image/jpeg', 'image/png', 'image/webp'}
+    if file.content_type not in allowed:
+        return JSONResponse(status_code=400, content={"error": "Only JPEG, PNG, WebP allowed"})
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "Max 5MB"})
+    ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+    fname = f"collection_{collection_id}_{uuid.uuid4().hex[:8]}.{ext}"
+    path = UPLOAD_DIR / fname
+    with open(path, 'wb') as f:
+        f.write(contents)
+    url = f"/api/uploads/{fname}"
+    result = await db.collections.update_one(
+        {'id': collection_id, 'user_id': user['user_id']},
+        {'$set': {'picture_url': url, 'updated_at': datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        return JSONResponse(status_code=404, content={"error": "Collection not found"})
+    return {"picture_url": url}
+
+# ============ UNBAN APPEALS ============
+
+@api_router.post("/appeals")
+async def create_appeal(body: UnbanAppealCreate, user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    if not body.reason.strip():
+        return JSONResponse(status_code=400, content={"error": "Reason required"})
+    if len(body.reason) > 1000:
+        return JSONResponse(status_code=400, content={"error": "Too long (max 1000 chars)"})
+    user_data = await db.users.find_one({'id': user['user_id']}, {'_id': 0, 'is_banned': 1})
+    if not user_data or not user_data.get('is_banned'):
+        return JSONResponse(status_code=400, content={"error": "You are not banned"})
+    existing = await db.appeals.find_one({'user_id': user['user_id'], 'status': 'pending'})
+    if existing:
+        return JSONResponse(status_code=400, content={"error": "You already have a pending appeal"})
+    doc = {
+        'id': str(uuid.uuid4()),
+        'user_id': user['user_id'],
+        'username': user.get('username', ''),
+        'reason': body.reason.strip(),
+        'status': 'pending',
+        'staff_response': '',
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'reviewed_at': '',
+    }
+    await db.appeals.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.get("/appeals/my")
+async def get_my_appeals(user=Depends(get_current_user)):
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    appeals = await db.appeals.find({'user_id': user['user_id']}, {'_id': 0}).sort('created_at', -1).to_list(20)
+    return appeals
+
+@api_router.get("/appeals/all")
+async def get_all_appeals(user=Depends(get_current_user)):
+    if not await is_moderator_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Staff access required"})
+    appeals = await db.appeals.find({}, {'_id': 0}).sort('created_at', -1).to_list(100)
+    return appeals
+
+@api_router.post("/appeals/{appeal_id}/review")
+async def review_appeal(appeal_id: str, action: str = Query(...), response: str = Query(""), user=Depends(get_current_user)):
+    if not await is_moderator_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Staff access required"})
+    if action not in ('approve', 'deny'):
+        return JSONResponse(status_code=400, content={"error": "Action must be 'approve' or 'deny'"})
+    appeal = await db.appeals.find_one({'id': appeal_id}, {'_id': 0})
+    if not appeal:
+        return JSONResponse(status_code=404, content={"error": "Appeal not found"})
+    now = datetime.now(timezone.utc).isoformat()
+    await db.appeals.update_one(
+        {'id': appeal_id},
+        {'$set': {'status': 'approved' if action == 'approve' else 'denied', 'staff_response': response, 'reviewed_at': now, 'reviewed_by': user.get('username', '')}}
+    )
+    if action == 'approve':
+        await db.users.update_one({'id': appeal['user_id']}, {'$set': {'is_banned': False}})
+        await db.moderation_log.insert_one({
+            'id': str(uuid.uuid4()), 'action': 'unban_appeal',
+            'target_user_id': appeal['user_id'], 'target_username': appeal.get('username', ''),
+            'performed_by': user.get('username', ''), 'details': f'Appeal approved: {response}',
+            'created_at': now
+        })
+    # Notify the user
+    notif = {
+        'id': str(uuid.uuid4()), 'user_id': appeal['user_id'],
+        'type': 'appeal_result',
+        'title': f'Appeal {"Approved" if action == "approve" else "Denied"}',
+        'message': response or ('Your ban has been lifted.' if action == 'approve' else 'Your appeal was denied.'),
+        'is_read': False, 'created_at': now
+    }
+    await db.notifications.insert_one(notif)
+    return {"message": f"Appeal {action}d"}
+
+# ============ MODERATION LOG ============
+
+@api_router.get("/modlog")
+async def get_moderation_log(user=Depends(get_current_user)):
+    if not await is_moderator_or_above(user):
+        return JSONResponse(status_code=403, content={"error": "Staff access required"})
+    logs = await db.moderation_log.find({}, {'_id': 0}).sort('created_at', -1).limit(100).to_list(100)
+    return logs
+
+# ============ RULES ============
+
+@api_router.get("/rules")
+async def get_rules():
+    return {
+        "rules": [
+            {"title": "Respect Other Users", "description": "Treat all users with respect. No harassment, hate speech, or bullying in comments or profiles."},
+            {"title": "No NSFW Content", "description": "Do not upload NSFW, explicit, or inappropriate images as profile pictures, banners, or collection covers. Violations will result in a ban."},
+            {"title": "No Spam", "description": "Do not spam comments, collections, or profiles with irrelevant or repetitive content."},
+            {"title": "No Impersonation", "description": "Do not impersonate other users, staff members, or Steam employees."},
+            {"title": "Keep It Legal", "description": "Do not share pirated content, illegal links, or promote cheating/hacking tools."},
+            {"title": "Honest Collections", "description": "Collections should be genuine and helpful. Do not create misleading collections with irrelevant games."},
+            {"title": "Profile Guidelines", "description": "Keep your profile appropriate. Offensive bios, usernames, or images may result in a ban."},
+            {"title": "Report Issues", "description": "If you see rule violations, report them via the Support system. Do not take moderation into your own hands."},
+            {"title": "Ban Appeals", "description": "If you are banned and believe it was a mistake, you can submit an appeal through the Support page. Appeals are reviewed by staff."},
+            {"title": "Staff Decisions Are Final", "description": "Moderators, Admins, and the Creator have the authority to enforce these rules. Repeated violations result in permanent bans."},
+        ]
+    }
+
+# ============ DISCOVER NEW GAMES ============
+
+@api_router.get("/discover/trending")
+async def discover_trending_games():
+    try:
+        async with httpx.AsyncClient() as http_client:
+            resp = await http_client.get(
+                'https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/',
+                params={'key': STEAM_API_KEY}, timeout=10.0)
+            data = resp.json()
+            ranks = data.get('response', {}).get('ranks', [])[:12]
+            results = []
+            app_ids = [r['appid'] for r in ranks]
+            for app_id in app_ids:
+                try:
+                    detail_resp = await http_client.get(
+                        f'https://store.steampowered.com/api/appdetails',
+                        params={'appids': app_id, 'l': 'english'}, timeout=5.0)
+                    detail = detail_resp.json().get(str(app_id), {})
+                    if detail.get('success'):
+                        gdata = detail['data']
+                        results.append({
+                            'app_id': app_id,
+                            'name': gdata.get('name', ''),
+                            'header_image': gdata.get('header_image', ''),
+                            'capsule_image': gdata.get('capsule_image', gdata.get('header_image', '')),
+                            'short_description': gdata.get('short_description', '')[:150],
+                            'is_free': gdata.get('is_free', False),
+                            'price': gdata.get('price_overview', {}).get('final_formatted', 'Free' if gdata.get('is_free') else ''),
+                        })
+                except Exception:
+                    continue
+            return results
+    except Exception:
+        return []
 
 # ============ CATEGORIES & HEALTH ============
 

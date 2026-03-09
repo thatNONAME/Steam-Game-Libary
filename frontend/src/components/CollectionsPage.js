@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, FolderHeart, Share2, Trash2, Edit2, Loader2, Globe, Lock } from "lucide-react";
+import { Plus, FolderHeart, Share2, Trash2, Edit2, Loader2, Globe, Lock, ImagePlus } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -19,6 +19,8 @@ export default function CollectionsPage({ user, token }) {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({ name: "", description: "", is_public: true, game_ids: [] });
   const [saving, setSaving] = useState(false);
+  const [pictureFile, setPictureFile] = useState(null);
+  const [picturePreview, setPicturePreview] = useState(null);
 
   const fetchData = useCallback(async () => {
     if (!token) { navigate("/"); return; }
@@ -39,15 +41,24 @@ export default function CollectionsPage({ user, token }) {
     if (!form.name.trim()) { toast.error("Name is required"); return; }
     setSaving(true);
     try {
+      let collectionId = editingId;
       if (editingId) {
         await axios.put(`${API}/collections/${editingId}`, form, { headers: { Authorization: `Bearer ${token}` } });
         toast.success("Collection updated");
       } else {
-        await axios.post(`${API}/collections`, form, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await axios.post(`${API}/collections`, form, { headers: { Authorization: `Bearer ${token}` } });
+        collectionId = res.data.id;
         toast.success("Collection created");
+      }
+      // Upload picture if selected
+      if (pictureFile && collectionId) {
+        const fd = new FormData();
+        fd.append('file', pictureFile);
+        await axios.post(`${API}/collections/${collectionId}/picture`, fd, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' } });
       }
       setCreateOpen(false); setEditingId(null);
       setForm({ name: "", description: "", is_public: true, game_ids: [] });
+      setPictureFile(null); setPicturePreview(null);
       fetchData();
     } catch { toast.error("Failed to save"); }
     finally { setSaving(false); }
@@ -63,6 +74,7 @@ export default function CollectionsPage({ user, token }) {
 
   const startEdit = (c) => {
     setForm({ name: c.name, description: c.description || "", is_public: c.is_public, game_ids: c.game_ids || [] });
+    setPicturePreview(c.picture_url || null); setPictureFile(null);
     setEditingId(c.id); setCreateOpen(true);
   };
 
@@ -101,6 +113,24 @@ export default function CollectionsPage({ user, token }) {
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Collection name" data-testid="collection-name-input" className="bg-secondary/30 border-border/50" />
               <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Description (optional)"
                 data-testid="collection-desc-input" className="w-full h-20 px-3 py-2 rounded-lg bg-secondary/30 border border-border/50 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring text-foreground" />
+              <div>
+                <p className="text-sm font-medium mb-2 flex items-center gap-2"><ImagePlus className="w-4 h-4" />Cover Image (optional)</p>
+                <label className="flex items-center justify-center w-full h-28 rounded-lg border-2 border-dashed border-border/50 bg-secondary/20 hover:bg-secondary/30 cursor-pointer transition-colors overflow-hidden" data-testid="collection-picture-upload">
+                  {picturePreview ? (
+                    <img src={picturePreview} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Click to upload</span>
+                  )}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      if (file.size > 5 * 1024 * 1024) { toast.error("Max 5MB"); return; }
+                      setPictureFile(file);
+                      setPicturePreview(URL.createObjectURL(file));
+                    }
+                  }} />
+                </label>
+              </div>
               <label className="flex items-center justify-between">
                 <span className="text-sm">Public collection</span>
                 <button onClick={() => setForm({ ...form, is_public: !form.is_public })} data-testid="collection-public-toggle"
@@ -133,7 +163,9 @@ export default function CollectionsPage({ user, token }) {
       {collections.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {collections.map((c) => (
-            <div key={c.id} onClick={() => navigate(`/collection/${c.id}`)} className="rounded-xl border border-border/50 bg-card/50 p-5 hover:bg-card/80 transition-colors cursor-pointer group" data-testid={`collection-card-${c.id}`}>
+            <div key={c.id} onClick={() => navigate(`/collection/${c.id}`)} className="rounded-xl border border-border/50 bg-card/50 overflow-hidden hover:bg-card/80 transition-colors cursor-pointer group" data-testid={`collection-card-${c.id}`}>
+              {c.picture_url && <img src={c.picture_url} alt="" className="w-full h-32 object-cover" onError={(e) => { e.target.style.display = 'none'; }} />}
+              <div className="p-5">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-base truncate group-hover:text-primary transition-colors">{c.name}</h3>
@@ -152,6 +184,7 @@ export default function CollectionsPage({ user, token }) {
                 {c.is_public && <Button variant="ghost" size="sm" onClick={() => copyShareLink(c.id)} data-testid={`share-collection-${c.id}`} className="gap-1.5"><Share2 className="w-3.5 h-3.5" />Share</Button>}
                 <div className="ml-auto" />
                 <Button variant="ghost" size="sm" onClick={() => handleDelete(c.id)} data-testid={`delete-collection-${c.id}`} className="text-destructive hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></Button>
+              </div>
               </div>
             </div>
           ))}

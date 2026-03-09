@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Search, RefreshCw, Loader2, Gamepad2, LogIn, ArrowUpDown } from "lucide-react";
+import { Search, RefreshCw, Loader2, Gamepad2, LogIn, ArrowUpDown, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -31,6 +31,8 @@ export default function GameLibrary({ user, token }) {
   const [sortBy, setSortBy] = useState("added");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [dragAdding, setDragAdding] = useState(false);
   const isGuest = !user;
 
   const loadLocal = useCallback(() => {
@@ -85,6 +87,30 @@ export default function GameLibrary({ user, token }) {
     finally { setSyncing(false); }
   };
 
+  const extractSteamUrl = (text) => {
+    const match = text.match(/https?:\/\/store\.steampowered\.com\/app\/(\d+)/);
+    return match ? match[0] : null;
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setDragging(false);
+    const text = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('text/uri-list') || '';
+    const url = extractSteamUrl(text);
+    if (!url) { toast.error("Drop a Steam store link (store.steampowered.com/app/...)"); return; }
+    setDragAdding(true);
+    try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await axios.post(`${API}/games/add`, { url }, { headers });
+      handleGameAdded(res.data);
+      toast.success(`${res.data.name} added to your library!`);
+    } catch (err) { toast.error(err.response?.data?.error || "Failed to add game"); }
+    finally { setDragAdding(false); }
+  };
+
+  const handleDragOver = (e) => { e.preventDefault(); setDragging(true); };
+  const handleDragLeave = (e) => { if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) setDragging(false); };
+
   const filteredGames = games.filter((g) => {
     const matchCat = !selectedCategory || g.categories?.includes(selectedCategory);
     const matchSearch = !searchQuery.trim() || g.name?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -106,7 +132,23 @@ export default function GameLibrary({ user, token }) {
   const currentSort = SORT_OPTIONS.find((s) => s.value === sortBy);
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-8" data-testid="game-library">
+    <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-8 relative" data-testid="game-library"
+      onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
+      {/* Drag & Drop overlay */}
+      {dragging && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-4 border-dashed border-primary/50 rounded-xl pointer-events-none" data-testid="drag-overlay">
+          <div className="text-center">
+            <Plus className="w-16 h-16 mx-auto mb-4 text-primary animate-bounce" />
+            <p className="text-xl font-bold text-primary">Drop Steam link to add game</p>
+            <p className="text-sm text-muted-foreground mt-1">store.steampowered.com/app/...</p>
+          </div>
+        </div>
+      )}
+      {dragAdding && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="text-center"><Loader2 className="w-10 h-10 mx-auto mb-3 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Adding game...</p></div>
+        </div>
+      )}
       <div className="flex flex-col gap-6 mb-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

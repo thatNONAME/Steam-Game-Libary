@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import ThemeSwitcher from "@/components/ThemeSwitcher";
-import { Menu, LogIn, LogOut, User, Settings, Users, FolderHeart, Shield, Compass, HelpCircle, Bell, CheckCheck, MessageSquare } from "lucide-react";
+import { Menu, LogIn, LogOut, User, Settings, Users, FolderHeart, Shield, Compass, HelpCircle, Bell, CheckCheck, MessageSquare, ClipboardList, ScrollText, Gamepad2 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -73,17 +73,19 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
       <div className="max-w-[1600px] mx-auto px-4 md:px-8">
         <div className="flex items-center justify-between h-16">
           <button onClick={() => navigate("/")} className="flex items-center gap-3 group" data-testid="logo">
-            <img src="/logo.png" alt="Game Library" className="w-8 h-8 transition-transform group-hover:scale-110" />
+            <Gamepad2 className="w-7 h-7 text-primary transition-transform group-hover:rotate-12" />
             <span className="text-xl font-bold tracking-tight font-['Outfit']">Game Library</span>
           </button>
           <div className="hidden md:flex items-center gap-1">
-            <NavLink to="/" testId="nav-library">Library</NavLink>
+            <NavLink to="/" icon={Gamepad2} testId="nav-library">Library</NavLink>
             {user && <NavLink to="/collections" icon={FolderHeart} testId="nav-collections">Collections</NavLink>}
             <NavLink to="/discover" icon={Compass} testId="nav-discover">Discover</NavLink>
             <NavLink to="/users" icon={Users} testId="nav-users">Users</NavLink>
             {user && <NavLink to="/support" icon={HelpCircle} testId="nav-support">Support</NavLink>}
+            <NavLink to="/rules" icon={ScrollText} testId="nav-rules">Rules</NavLink>
             {user && <NavLink to="/settings" icon={Settings} testId="nav-settings">Settings</NavLink>}
             {isStaff && <NavLink to="/support/admin" icon={MessageSquare} testId="nav-support-admin">Tickets</NavLink>}
+            {isStaff && <NavLink to="/moderation" icon={ClipboardList} testId="nav-moderation">Moderation</NavLink>}
             {(user?.is_owner || (user?.roles || []).includes('Admin')) && <NavLink to="/admin" icon={Shield} testId="nav-admin">Admin</NavLink>}
           </div>
           <div className="hidden md:flex items-center gap-3">
@@ -154,13 +156,15 @@ export default function Navbar({ user, theme, setTheme, onLogin, onLogout }) {
               <SheetTrigger asChild><Button variant="ghost" size="icon" data-testid="mobile-menu-btn"><Menu className="w-5 h-5" /></Button></SheetTrigger>
               <SheetContent side="right" className="w-72 glass-heavy border-border/50">
                 <div className="flex flex-col gap-4 mt-8">
-                  <NavLink to="/" testId="mobile-nav-library">Library</NavLink>
+                  <NavLink to="/" icon={Gamepad2} testId="mobile-nav-library">Library</NavLink>
                   {user && <NavLink to="/collections" icon={FolderHeart} testId="mobile-nav-collections">Collections</NavLink>}
                   <NavLink to="/discover" icon={Compass} testId="mobile-nav-discover">Discover</NavLink>
                   <NavLink to="/users" icon={Users} testId="mobile-nav-users">Users</NavLink>
                   {user && <NavLink to="/support" icon={HelpCircle} testId="mobile-nav-support">Support</NavLink>}
+                  <NavLink to="/rules" icon={ScrollText} testId="mobile-nav-rules">Rules</NavLink>
                   {user && <NavLink to="/settings" icon={Settings} testId="mobile-nav-settings">Settings</NavLink>}
                   {isStaff && <NavLink to="/support/admin" icon={MessageSquare} testId="mobile-nav-support-admin">Tickets</NavLink>}
+                  {isStaff && <NavLink to="/moderation" icon={ClipboardList} testId="mobile-nav-moderation">Moderation</NavLink>}
                   {(user?.is_owner || (user?.roles || []).includes('Admin')) && <NavLink to="/admin" icon={Shield} testId="mobile-nav-admin">Admin</NavLink>}
                   <div className="border-t border-border/50 pt-4">
                     <span className="text-xs uppercase tracking-widest text-muted-foreground px-2 mb-2 block">Theme</span>

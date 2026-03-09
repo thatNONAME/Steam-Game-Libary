@@ -16,6 +16,8 @@ import FollowersPage from "@/components/FollowersPage";
 import DiscoverPage from "@/components/DiscoverPage";
 import SupportPage from "@/components/SupportPage";
 import SupportAdmin from "@/components/SupportAdmin";
+import RulesPage from "@/components/RulesPage";
+import ModerationLog from "@/components/ModerationLog";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -84,6 +86,8 @@ function AppContent() {
             <Route path="/discover" element={<DiscoverPage />} />
             <Route path="/support" element={<SupportPage user={user} token={token} />} />
             <Route path="/support/admin" element={<SupportAdmin user={user} token={token} />} />
+            <Route path="/rules" element={<RulesPage />} />
+            <Route path="/moderation" element={<ModerationLog user={user} token={token} />} />
             <Route path="/admin" element={<AdminPanel user={user} token={token} />} />
           </Routes>
         </main>
